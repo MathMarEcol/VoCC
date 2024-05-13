@@ -41,7 +41,9 @@ approach in that iterations of a trajectory are based on cumulative time travell
 }
 \examples{
 
-yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = nlayers(HSST),
+HSST <- VoCC_get_data("HSST.tif")
+
+yrSST <- sumSeries(HSST, p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
 fun = function(x) colMeans(x, na.rm = TRUE),
 freqin = "months", freqout = "years")
 tr <- tempTrend(yrSST, th = 10)
@@ -50,17 +52,18 @@ v <- gVoCC(tr,sg)
 vel <- v[[1]]
 ang <- v[[2]]
 
-# calculate the annual SST mean over the period
+# Calculate the annual SST mean over the period
 mn <- mean(yrSST, na.rm = T)
 
-# get the set of starting cells for the trajectories
-lonlat <- na.omit(data.frame(xyFromCell(vel, 1:ncell(vel)), vel[], ang[], mn[]))[,1:2]
+# Get the set of starting cells for the trajectories
+lonlat <- stats::na.omit(data.frame(terra::xyFromCell(vel, 1:terra::ncell(vel)),
+                                    vel[], ang[], mn[]))[,1:2]
 
 # Calculate trajectories
 # The following throws an error due to the trajectories moving beyond the raster extent
 traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50)
 
-This accounts for the extent issue
+# This accounts for the extent issue
 traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
 
 }

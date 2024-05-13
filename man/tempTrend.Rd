@@ -26,15 +26,16 @@ gradient-based climate velocity using gVoCC.
 }
 \examples{
 
-yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = nlayers(HSST),
+HSST <- VoCC_get_data("HSST.tif")
+
+yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
 fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
 
 # Mean annual SST trend (minimum threshold of 10 years of data), with SE and p-values.
 
 tr <- tempTrend(yrSST, th = 10)
 
-plot(tr)
-
+terra::plot(tr)
 }
 \seealso{
 {\code{\link{spatGrad}}, \code{\link{gVoCC}}}

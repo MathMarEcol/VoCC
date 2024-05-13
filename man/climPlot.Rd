@@ -4,7 +4,7 @@
 \alias{climPlot}
 \title{Binned scatter plot for 2-dimensional climate space}
 \usage{
-climPlot(xy, x.binSize, y.binSize, x.name="V1", y.name="V2")
+climPlot(xy, x.binSize, y.binSize, x.name = "V1", y.name = "V2")
 }
 \arguments{
 \item{xy}{\code{data.frame} with cells as rows and 4 columns representing the present and future local values for the two variables (V1p, V1f, V2p, V2f).}
@@ -27,17 +27,21 @@ Function to create a binned scatter plot of two climate variables.
 }
 \examples{
 
+JapTC <- VoCC_get_data("JapTC.tif")
+
 # Plot climate space for the two first variables(annual precipitation and maximum temperature)
-xy <- na.omit(data.frame(getValues(JapTC[[1]]), getValues(JapTC[[2]]),
-getValues(JapTC[[3]]), getValues(JapTC[[4]])))
+xy <- stats::na.omit(data.frame(terra::values(JapTC[[1]]),
+                                  terra::values(JapTC[[2]]),
+terra::values(JapTC[[3]]), terra::values(JapTC[[4]])))
 
 out <- climPlot(xy, x.binSize = 5, y.binSize = 0.2, x.name="Precipitation (mm)",
 y.name="Temperature max (°C)")
 
+\dontrun{
 # output plots can be saved as:
-ggplot2::ggsave(plot=out, filename=paste0(getwd(), "/example_plot.pdf"), width=17, height=17, unit="cm")
-
-
+ggplot2::ggsave(plot=out, filename=file.path(getwd(), "example_plot.pdf"),
+                width=17, height=17, unit="cm")
+}
 }
 \seealso{
 {\code{\link{dVoCC}}, \code{\link{climPCA}}}

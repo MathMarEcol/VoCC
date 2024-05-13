@@ -24,22 +24,37 @@ Function to calculate VoCC-based residence time of isotherms within a polygon af
 \examples{
 
 # Load example Exclusive Economic Zone polygon
+\dontrun{
+EEZ <- VoCC_get_data("EEZ.gpkg")
+HSST <- VoCC_get_data("HSST.tif")
 
-?EEZ
-?HSST
-yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = nlayers(HSST),
+yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
 fun = function(x) colMeans(x, na.rm = TRUE),
 freqin = "months", freqout = "years")
 tr <- tempTrend(yrSST, th = 10)
 sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
 v <- gVoCC(tr,sg)
 vel <- v[[1]]
+
 # Calculating area internally
 a1 <- resTime(EEZ, vel, areapg = NA)
 a1
+
 # Using the area field from the polygon data table
 a2 <- resTime(EEZ, vel, areapg = as.numeric(as.numeric(levels(EEZ$Area_km2))[EEZ$Area_km2]))
 a2
+
+# Using a user defined polygon
+x_coord <- c(-28, -20, -20.3, -25.5)
+y_coord <- c(60, 61, 63, 62)
+p <- Polygon(cbind(x_coord, y_coord))
+sps <- SpatialPolygons(list(Polygons(list(p),1)))
+a3 <- resTime(sps, vel, areapg = NA)
+
+terra::plot(vel)
+terra::plot(EEZ, add = TRUE)
+terra::plot(sps, add = TRUE)
+}
 }
 \references{
 \href{https://www.nature.com/articles/nature08649}{Loarie et al. 2009}. The velocity of climate change. Nature, 462, 1052-1055.

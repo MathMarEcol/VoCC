@@ -1,7 +1,6 @@
 Package: VoCC
 Title: The Velocity of Climate Change and related climatic metrics
-Date: 2019-07-18
-Version: 1.0.0
+Version: 1.0.1
 Authors@R: c(person("Jorge", "Garcia Molinos", email = "jorgegmolinos@arc.hokudai.ac.jp", role = c("aut", "cre")),
     person("David", "S. Schoeman", email = "", role = "aut"),
     person("Christopher", "J. Brown", email = "", role = "aut"),
@@ -10,25 +9,26 @@ Authors@R: c(person("Jorge", "Garcia Molinos", email = "jorgegmolinos@arc.hokuda
 Description: Functions to calculate the velocity of climate change (VoCC) and related metrics including 
     both gradient-based (Burrows et al. 2011, Burrows et al. 2014), and distance-based (Hamann et a. 2013,
      Garcia Molinos et al. 2017) approaches.
-Depends: R (>= 3.3),
-         raster
-Imports: CircStats,
+Depends: R (>= 3.5)
+Imports: 
+    assertthat,
+    CircStats,
     cowplot,
     data.table,
     doParallel,
-    fields,
     foreach,
     gdistance,
     geosphere,
     ggplot2,
-    matrixStats,
+    magrittr,
     parallel,
     RColorBrewer,
-    rgdal,
+    rlang,
     sp,
     stats,
+    terra,
     xts
-Suggests: ggplot2,
+Suggests:
     gridExtra,
     knitr,
     mapplots,
@@ -36,7 +36,6 @@ Suggests: ggplot2,
     prettydoc,
     rasterVis,
     repmis,
-    rgeos,
     rmarkdown,
     scales
 URL: https://github.com/JorGarMol/VoCC
@@ -44,6 +43,6 @@ BugReports: https://github.com/JorGarMol/VoCC/issues
 License: AGPL (>= 3) LICENSE
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 6.1.0
+RoxygenNote: 7.3.1
 VignetteBuilder: knitr,
     rmarkdown

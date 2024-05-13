@@ -4,7 +4,14 @@
 \alias{climPCA}
 \title{Reduce dimensionality of climate predictors via Principal Component Analysis}
 \usage{
-climPCA(climp, climf, trans = function(x) log(x), cen = TRUE, sc = TRUE, th = 0.8)
+climPCA(
+  climp,
+  climf,
+  trans = function(x) log(x),
+  cen = TRUE,
+  sc = TRUE,
+  th = 0.8
+)
 }
 \arguments{
 \item{climp}{\code{raster.stack} with one layer for each climatic variable with the values for present or baseline conditions.}
@@ -31,12 +38,13 @@ These components can subsequently be used as synthetic climatic variables to red
 }
 \examples{
 
+JapTC <- VoCC_get_data("JapTC.tif")
+
 comp <- climPCA(JapTC[[c(1,3,5)]], JapTC[[c(2,4,6)]], trans = NA, cen = TRUE, sc = TRUE, th = 0.85)
 summary(comp[[1]]) # first two components explain >90\% of variance
 # Create a data frame with the necessary variables in the required order (see climAna? for details)
 clim <- comp[[2]][,c(2,4,3,5,1)]
-clim[,c("x","y")] <- xyFromCell(JapTC[[1]], clim$cid)
-
+clim[,c("x","y")] <- terra::xyFromCell(JapTC[[1]], clim$cid)
 }
 \seealso{
 {\code{\link{dVoCC}}, \code{\link{climPlot}}}

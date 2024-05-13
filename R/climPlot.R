@@ -2,8 +2,6 @@
 #'
 #' Function to create a binned scatter plot of two climate variables.
 #'
-#' @usage   climPlot(xy, x.binSize, y.binSize, x.name="V1", y.name="V2")
-#'
 #' @param xy \code{data.frame} with cells as rows and 4 columns representing the present and future local values for the two variables (V1p, V1f, V2p, V2f).
 #' @param x.binSize \code{numeric} the bin size for the first variable.
 #' @param y.binSize \code{numeric} the bin size for the second variable.
@@ -16,27 +14,25 @@
 #'
 #' @seealso{\code{\link{dVoCC}}, \code{\link{climPCA}}}
 #'
-#' @import data.table
-#' @import ggplot2
-#' @importFrom RColorBrewer brewer.pal
-#' @importFrom cowplot plot_grid
 #' @export
 #' @author Jorge Garcia Molinos and Naoki H. Kumagai
 #' @examples
 #'
+#' JapTC <- VoCC_get_data("JapTC.tif")
+#'
 #' # Plot climate space for the two first variables(annual precipitation and maximum temperature)
-#' xy <- na.omit(data.frame(getValues(JapTC[[1]]), getValues(JapTC[[2]]),
-#' getValues(JapTC[[3]]), getValues(JapTC[[4]])))
+#' xy <- stats::na.omit(data.frame(terra::values(JapTC[[1]]),
+#'                                   terra::values(JapTC[[2]]),
+#' terra::values(JapTC[[3]]), terra::values(JapTC[[4]])))
 #'
 #' out <- climPlot(xy, x.binSize = 5, y.binSize = 0.2, x.name="Precipitation (mm)",
 #' y.name="Temperature max (°C)")
 #'
+#'\dontrun{
 #' # output plots can be saved as:
-#' ggplot2::ggsave(plot=out, filename=paste0(getwd(), "/example_plot.pdf"), width=17, height=17, unit="cm")
-#'
-#'
-#' @rdname climPlot
-
+#' ggplot2::ggsave(plot=out, filename=file.path(getwd(), "example_plot.pdf"),
+#'                 width=17, height=17, unit="cm")
+#'}
 
 climPlot <- function(xy, x.binSize, y.binSize, x.name="V1", y.name="V2"){
   xp = xy[,1]
@@ -50,7 +46,7 @@ climPlot <- function(xy, x.binSize, y.binSize, x.name="V1", y.name="V2"){
   y.bin <- seq(floor(min(cbind(yp, yf))), ceiling(max(cbind(yp, yf))), length = y.nbins)
 
   # define palette
-  rf <- colorRampPalette(rev(RColorBrewer::brewer.pal(11,'Spectral')))
+  rf <- grDevices::colorRampPalette(rev(RColorBrewer::brewer.pal(11,'Spectral')))
   r <- rf(64)
 
   # present
@@ -79,7 +75,9 @@ climPlot <- function(xy, x.binSize, y.binSize, x.name="V1", y.name="V2"){
   freq2D[] <- NA
   for(i in 1:x.nbins){
     for(j in 1:y.nbins){
-      freq2D[i,j] <- ifelse(is.na(freq2Dp[i,j]) & !is.na(freq2Df[i,j]), 1, ifelse(!is.na(freq2Dp[i,j]) & is.na(freq2Df[i,j]), 2, ifelse(is.na(freq2Dp[i,j]) & is.na(freq2Df[i,j]), NA, 0)))
+      freq2D[i,j] <- ifelse(is.na(freq2Dp[i,j]) & !is.na(freq2Df[i,j]), 1,
+                            ifelse(!is.na(freq2Dp[i,j]) & is.na(freq2Df[i,j]), 2,
+                                   ifelse(is.na(freq2Dp[i,j]) & is.na(freq2Df[i,j]), NA, 0)))
     }}
 
   # plot climate space
@@ -93,15 +91,28 @@ climPlot <- function(xy, x.binSize, y.binSize, x.name="V1", y.name="V2"){
   Freq2D <- data.frame(x=x.bin, y=rep(y.bin, each=length(x.bin)), freq=Freq2D)
   Freq2D <- Freq2D[!is.na(Freq2D$freq),]
 
-  panelAB <- ggplot(Freq2Dpf, aes(x=x, y=y, fill=freq)) + geom_raster() + scale_fill_gradientn(
-    colors = r, name="Cell count", breaks=seq(0,UL,20), guide=guide_colorbar(ticks.linewidth=1.5)) + facet_wrap(~clim, scale="free_y",
-                                                                                                                ncol=2) + scale_x_continuous(limits=c(min(x.bin), max(x.bin))) + scale_y_continuous(limits=c(min(y.bin), max(y.bin))) + labs(
-                                                                                                                  x=x.name, y=y.name) + theme(legend.position="bottom",legend.justification=c(1,0), legend.key.width=unit(2, "cm"), strip.text=element_blank())
+  panelAB <- ggplot2::ggplot(Freq2Dpf, ggplot2::aes(x = x, y = y, fill = freq)) +
+    ggplot2::geom_raster() +
+    ggplot2::scale_fill_gradientn(colors = r,
+                                  name = "Cell count",
+                                  breaks = seq(0, UL, 20),
+                                  guide = ggplot2::guide_colorbar(ticks.linewidth=1.5)) +
+    ggplot2::facet_wrap(~clim, scale = "free_y", ncol = 2) +
+    ggplot2::scale_x_continuous(limits = c(min(x.bin), max(x.bin))) +
+    ggplot2::scale_y_continuous(limits = c(min(y.bin), max(y.bin))) +
+    ggplot2::labs(x = x.name, y = y.name) +
+    ggplot2::theme(legend.position = "bottom",
+                   legend.justification = c(1,0),
+                   legend.key.width = ggplot2::unit(2, "cm"),
+                   strip.text = ggplot2::element_blank())
 
-  panelC <- ggplot(Freq2D, aes(x=x, y=y, fill=freq)) + geom_raster() + scale_fill_manual(values=c("#56B4E9", "#009E73", "#D55E00"),
-                                                                                         name="Climate type") + labs(x=x.name, y=y.name)
+  panelC <- ggplot2::ggplot(Freq2D, ggplot2::aes(x = x, y = y, fill = freq)) +
+    ggplot2::geom_raster() +
+    ggplot2::scale_fill_manual(values = c("#56B4E9", "#009E73", "#D55E00"), name = "Climate type") +
+    ggplot2::labs(x = x.name, y = y.name)
 
-  panels <- cowplot::plot_grid(panelAB, panelC, nrow=2, rel_heights=c(1.3, 1.0))
+  panels <- cowplot::plot_grid(panelAB, panelC, nrow = 2, rel_heights = c(1.3, 1.0))
+
   return(panels)
 }
 

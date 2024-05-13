@@ -4,7 +4,7 @@
 \alias{trajLine}
 \title{Climate velocity trajectory spatial lines}
 \usage{
-trajLine(x, projx)
+trajLine(x, projx = "EPSG::4326")
 }
 \arguments{
 \item{x}{\code{data.frame} containing the coordinates (x, y) of the constituent
@@ -25,7 +25,9 @@ Create a spatial line data frame object from trajectory points.
 }
 \examples{
 
-yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = nlayers(HSST),
+HSST <- VoCC_get_data("HSST.tif")
+
+yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
 fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
 tr <- tempTrend(yrSST, th = 10)
 sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
@@ -34,23 +36,24 @@ vel <- v[[1]]
 ang <- v[[2]]
 
 # calculate the annual SST mean over the period
-mn <- mean(yrSST, na.rm = T)
+mn <- terra::mean(yrSST, na.rm = TRUE)
 
 # get the set of starting cells for the trajectories
-lonlat <- na.omit(data.frame(xyFromCell(vel, 1:ncell(vel)), vel[], ang[], mn[]))[,1:2]
+lonlat <- stats::na.omit(data.frame(terra::xyFromCell(vel, 1:terra::ncell(vel)),
+                                    vel[], ang[], mn[]))[,1:2]
 
 # Calculate trajectories.
-traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct =TRUE)
+traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
 
 # create a spatial line data frame from traj
 lns <- trajLine(x = traj)
-plot(mn)
-plot(lns, add = TRUE)
+terra::plot(mn)
+terra::plot(lns, add = TRUE)
 
+\dontrun{
 # Export as ESRI shape file
-
-rgdal::writeOGR(lns, ".", "velTraj", "ESRI Shapefile")
-
+terra::writeVector(lns, filename = "velTraj", filetype = "ESRI Shapefile")
+}
 }
 \seealso{
 {\code{\link{voccTraj}}}

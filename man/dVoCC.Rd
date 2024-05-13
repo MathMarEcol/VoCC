@@ -4,8 +4,17 @@
 \alias{dVoCC}
 \title{Distance-based velocity based on geographically closest climate analogue}
 \usage{
-dVoCC(clim, n, tdiff, method = "Single", climTol, geoTol, distfun = "GreatCircle",
-trans = NA, lonlat = TRUE)
+dVoCC(
+  clim,
+  n,
+  tdiff,
+  method = "Single",
+  climTol,
+  geoTol,
+  distfun = "GreatCircle",
+  trans = NA,
+  lonlat = TRUE
+)
 }
 \arguments{
 \item{clim}{\code{data.frame} with the value for the climatic parameters (columns) by cell (rows), arranged as follows (see examples below):
@@ -18,7 +27,7 @@ These columns are not required if using the "Single" method. The last three colu
 
 \item{tdiff}{\code{integer} defining the number of years (or other temporal unit) between periods.}
 
-\item{method}{\code{character string} specifying the analogue method to be used. 'Single': a constant, single analogue threshold
+\item{method}{\code{ch)aracter string} specifying the analogue method to be used. 'Single': a constant, single analogue threshold
 for each climate variable is applied to all cells (Ohlemuller et al. 2006, Hamann et al. 2015); climate analogy corresponds to target cells
 with values below the specified threshold for each climatic variable. 'Variable': a cell-specific climate threshold is used for each climatic variable
 to determine the climate analogues associated with each cell by reference to its baseline climatic variability (Garcia Molinos et al. 2017).}
@@ -30,10 +39,10 @@ If a cell-specific threshold is being used, this function parameter should be pa
 If used, the pool of potential climate analogues will be limited to cells within that distance from the focal cell.}
 
 \item{distfun}{\code{character string} specifying the function to be used for estimating distances
-between focal and target cells. Either 'Euclidean', 'GreatCircle' (Great Circle Distances)
-or 'LeastCost' (Least Cost Path Distances). The latter requires a transition matrix supplied to the function via de 'trans' argument.}
+between focal and target cells. Either 'Euclidean', 'GreatCircle' (Great Circle Distances).
+'LeastCost' (Least Cost Path Distances) is NOT CURRENTLY IMPLEMENTED. LeastCost requires a transition matrix supplied to the function via de 'trans' argument.}
 
-\item{trans}{\code{TransitionLayer} gdistance object to be used for the analogue search if distfun = 'LeastCost'.}
+\item{trans}{\code{TransitionLayer} NOT CURRENTLY IMPLEMENTED gdistance object to be used for the analogue search if distfun = 'LeastCost'.}
 
 \item{lonlat}{\code{logical} is the analysis to be done in unprojected (lon/lat) coordinates?}
 }
@@ -49,33 +58,35 @@ other (target) cells in the future by reference to a specified climatic threshol
 specification of search distances and incorporates both least-cost path and Great Circle (as-the-crow-flies) distances.
 }
 \examples{
-
-?JapTC
+\dontrun{
+JapTC <- VoCC_get_data("JapTC.tif")
 
 # Create a data frame with the necessary variables in the required order
-clim <- na.omit(data.frame(getValues(JapTC), cid = 1:ncell(JapTC)))
-clim[,c("x","y")] <- xyFromCell(JapTC, clim$cid)
+clim <- stats::na.omit(data.frame(terra::values(JapTC), cid = 1:terra::ncell(JapTC)))
+clim[,c("x","y")] <- terra::xyFromCell(JapTC, clim$cid)
 
 # Constant threshold, distance-restricted velocity based on geographical distances
 avocc1 <- dVoCC(clim, n = 3, tdiff = 40, method = "Single", climTol = c(10, 0.1, 0.1),
-geoTol = 160, distfun = "GreatCircle", trans = NA, lonlat = TRUE)
+                    geoTol = 160, distfun = "GreatCircle", trans = NA, lonlat = TRUE)
+
 
 # Cell-specific, distance-unrestricted climate analogue velocity based on least-cost path distances
 # First, create the conductance matrix (all land cells considered to have conductance of 1)
-r <- raster(JapTC)
+r <- JapTC
 r[!is.na(JapTC[[1]])] <- 1
 h8 <- gdistance::transition(r, transitionFunction=mean, directions=8)
 h8 <- gdistance::geoCorrection(h8, type="c")
+
 # Now calculate the analogue velocity using the baseline SD for each variable as analogue threshold
 avocc2 <- dVoCC(clim, n = 3, tdiff = 40, method = "Variable", climTol = NA, geoTol = Inf,
-distfun = "LeastCost", trans = h8, lonlat = TRUE)
+                    distfun = "LeastCost", trans = h8, lonlat = TRUE)
 
 # Plot results
-r1 <- r2 <- raster(JapTC)
+r1 <- r2 <- JapTC
 r1[avocc1$focal] <- avocc1$vel
 r2[avocc2$focal] <- avocc2$vel
-plot(stack(r1,r2))
-
+terra::plot(c(r1,r2))
+}
 }
 \references{
 \href{https://onlinelibrary.wiley.com/doi/full/10.1111/j.1466-822X.2006.00245.x}{Ohlemuller et al. 2006}. Towards European climate risk surfaces: the extent and distribution of analogous and non-analogous climates 1931-2100. Global Ecology and Biogeography, 15, 395-405. \cr

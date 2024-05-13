@@ -30,10 +30,10 @@ Function to calculate the seasonal shift in the arriving of typical seasonal cli
 for a given period of interest as per Burrows et al. (2011).
 }
 \examples{
+HSST <- VoCC_get_data("HSST.tif")
 Apr <- shiftTime(HSST, yr1 = 1960, yr2 = 2009, yr0 = 1955, th = 10, m = 4)
 
-plot(Apr)
-
+terra::plot(Apr)
 }
 \references{
 \href{http://science.sciencemag.org/content/334/6056/652}{Burrows et al. 2011}. The pace of

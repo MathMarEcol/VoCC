@@ -4,8 +4,15 @@
 \alias{sumSeries}
 \title{Summarize climatic series to higher temporal resolution}
 \usage{
-sumSeries(r, p, yr0, l, fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months",
-freqout = "years")
+sumSeries(
+  r,
+  p,
+  yr0,
+  l = terra::nlyr(r),
+  fun = function(x) colMeans(x, na.rm = TRUE),
+  freqin = "months",
+  freqout = "years"
+)
 }
 \arguments{
 \item{r}{\code{RasterStack} containing the time series of the climatic variable.}
@@ -18,7 +25,7 @@ of the series (see examples).}
 \item{l}{\code{integer} length of the input time series.}
 
 \item{fun}{\code{logical} summary function to be computed. Summary functions need to be applied by cell (columns)
-so should have the structure 'function(x) apply(x, 2, function(y){...})'. For convinience, sumSeries imports
+so should have the structure 'function(x) apply(x, 2, function(y))'. For convenience, sumSeries imports
 colMaxs, and colMins from package ‘matrixStats’ (Bengtsson 2018) so they can be called in directly.}
 
 \item{freqin}{\code{character string} specifying the original time frequency of the series.}
@@ -40,11 +47,11 @@ in the package xts (Ryan and Ulrich 2017).
 \examples{
 # Monthly mean SST (HadISST) data for Europe Jan-1950 to Dec-2010
 
-?HSST
+HSST <- VoCC_get_data("HSST.tif")
 
 # Calculate mean annual monthly SST
 
-yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = nlayers(HSST),
+yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
 fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
 
 # Extract Jul Aug mean SST each year (xts months are indexed from 0 to 11)
@@ -53,7 +60,7 @@ myf = function(x, m = c(7,8)){
 x[xts::.indexmon(x) \%in\% (m-1)]
 }
 
-JlAugSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1950-01-01", l = raster::nlayers(HSST),
+JlAugSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
 fun = myf, freqin = "months", freqout = "other")
 
 # Same but calculating the annual variance of the two months
@@ -63,7 +70,7 @@ x1 <- x[xts::.indexmon(x) \%in\% (m-1)]
 xts::apply.yearly(x1, function(y) apply(y, 2, function(y){var(y, na.rm = TRUE)}))
 }
 
-meanJASST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1950-01-01", l = raster::nlayers(HSST),
+meanJASST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
 fun = myf, freqin = "months", freqout = "other")
 
 }

@@ -9,7 +9,7 @@
 #'
 #' VoCC_get_data()
 #'
-#' HSST <- VoCC_get_data(path = "HSST")
+#' HSST <- VoCC_get_data(path = "HSST.tif")
 #'
 VoCC_get_data <- function(path = NULL) {
   if (is.null(path)) {

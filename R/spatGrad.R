@@ -7,7 +7,7 @@
 #' @param r \code{RasterStack} with the annual climatic values for the period of interest.
 #' Alternatively, a \code{raster} with the annual climatic values averaged
 #' over the period of interest.
-#' @param th \code{Integer} indicating a lower thershold to truncate the spatial
+#' @param th \code{Integer} indicating a lower threshold to truncate the spatial
 #'  gradient with. Use -Inf (default) if no threshold required.
 #' @param projected \code{Logical} is the source raster in a projected coordinate system?
 #' If FALSE (default) a correction will be made to account for latitudinal distortion.
@@ -56,7 +56,10 @@ spatGrad <- function(r, th = -Inf, projected = FALSE) {
   # Create a columns for focal and each of its 8 adjacent cells
   y <- data.table::data.table(terra::adjacent(r, 1:terra::ncell(r), directions = 8, pairs = TRUE))
   y <- stats::na.omit(y[, climFocal := terra::values(r)[from]][order(from, to)]) # Get value for focal cell, order the table by raster sequence and omit NAs (land cells)
-  y[, clim := terra::values(r)[to]] # Insert values for adjacent cells
+
+  # TODO JDE added in na.rm = TRUE as I was getting NaN. I can't test if this behaviour has changed from raster....
+  # On second thought I am not sure if NAs are valid here. It gives errors below when calculating weighted means
+  y[, clim := terra::values(r,  na.rm = TRUE)[to]] # Insert values for adjacent cells
   y[, sy := terra::rowFromCell(r, from) - terra::rowFromCell(r, to)] # Column to identify rows in the raster (N = 1, mid = 0, S = -1)
   y[, sx := terra::colFromCell(r, to) - terra::colFromCell(r, from)] # Same for columns (E = 1, mid = 0, W = -1)
   y[sx > 1, sx := -1] # Sort out the W-E wrap at the dateline, part I
@@ -99,8 +102,23 @@ spatGrad <- function(r, th = -Inf, projected = FALSE) {
   y[, gradNS5 := (climFocal - climS) / (d * re[2])]
   y[, gradNS6 := (climE - climSE) / (d * re[2])]
 
-  # Calulate NS and WE gradients. NOTE: for angles to work (at least using simple positive and negative values on Cartesian axes), S-N & W-E gradients need to be positive)
-  y[, WEgrad := apply(data.table::.SD, 1, function(x) stats::weighted.mean(x, c(1, 2, 1, 1, 2, 1), na.rm = T)), .SDcols = 12:17]
+
+  for (nn in 1:365){
+
+   print(nn)
+
+    print(stats::weighted.mean(y[nn,12:17], w = c(1, 2, 1, 1, 2, 1), na.rm = TRUE))
+
+
+  }
+
+
+  browser()
+  # Calulate NS and WE gradients. NOTE: for angles to work (at least using simple positive and negative values on Cartesian axes),
+  # S-N & W-E gradients need to be positive.
+  # JDE Notes: 1 in apply = operate over rows
+  # Lots of NAs in clim. Can these be removed? Should they be? Chat to Dave S
+  y[, WEgrad := apply(data.table::.SD, 1, function(x) stats::weighted.mean(x, w = c(1, 2, 1, 1, 2, 1), na.rm = TRUE)), .SDcols = gradWE1:gradWE6]
   y[, NSgrad := apply(data.table::.SD, 1, function(x) stats::weighted.mean(x, c(1, 2, 1, 1, 2, 1), na.rm = T)), .SDcols = 18:23]
   y[is.na(WEgrad) & !is.na(NSgrad), WEgrad := 0L] # Where NSgrad does not exist, but WEgrad does, make NSgrad 0
   y[!is.na(WEgrad) & is.na(NSgrad), NSgrad := 0L] # same the other way around

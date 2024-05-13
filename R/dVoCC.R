@@ -41,7 +41,6 @@
 #' @export
 #' @author Jorge Garcia Molinos
 #' @examples
-#' \dontrun{
 #' JapTC <- VoCC_get_data("JapTC.tif")
 #'
 #' # Create a data frame with the necessary variables in the required order
@@ -54,6 +53,11 @@
 #'   geoTol = 160, distfun = "GreatCircle", trans = NA, lonlat = TRUE
 #' )
 #'
+#' r1 <- JapTC
+#' r1[avocc1$focal] <- avocc1$vel
+#' terra::plot(r1)
+#'
+#' \dontrun{
 #'
 #' # Cell-specific, distance-unrestricted climate analogue velocity based on least-cost path distances
 #' # First, create the conductance matrix (all land cells considered to have conductance of 1)
@@ -74,7 +78,10 @@
 #' r2[avocc2$focal] <- avocc2$vel
 #' terra::plot(c(r1, r2))
 #' }
-dVoCC <- function(clim, n, tdiff, method = "Single", climTol, geoTol, distfun = "GreatCircle", trans = NA, lonlat = TRUE) {
+#'
+dVoCC <- function(clim, n, tdiff, method = "Single", climTol, geoTol,
+                  distfun = "GreatCircle", trans = NA, lonlat = TRUE) {
+
   geoDis <- climDis <- ang <- vel <- target <- cid <- NULL # Fix devtools check warnings
 
   if (distfun == "Euclidean" & lonlat == TRUE) {

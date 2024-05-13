@@ -7,14 +7,14 @@ output:
     highlight: github
     theme: tactile
 vignette: >
-%\VignetteIndexEntry{VoCC_Tutorial}
+  %\VignetteIndexEntry{VoCC_Tutorial}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteIndexEntry{VoCC_Tutorial}
   \usepackage[utf8]{inputenc}
-  ---
+---
   
-  ```{r setup, include = FALSE}
-knitr::opts_chunk$set(
+```{r setup, include = FALSE}
+  knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>"
 )
@@ -27,25 +27,31 @@ For this tutorial we need the following packages (if not installed get them firs
 
 ```{r message=FALSE}
 # devtools::install_github("JorGarMol/VoCC", dependencies = TRUE, build_vignettes = TRUE)
-suppressWarnings(library(VoCC))
-suppressWarnings(library(rasterVis))
-suppressWarnings(library(gridExtra))
-suppressWarnings(library(doParallel))
-suppressWarnings(library(foreach))
-suppressWarnings(library(scales))
-suppressWarnings(library(data.table))
-suppressWarnings(library(mapplots))
-suppressWarnings(library(ggplot2))
-suppressWarnings(library(repmis))
+devtools::load_all()
+# suppressWarnings(library(VoCC))
+# suppressWarnings(library(rasterVis))
+# suppressWarnings(library(gridExtra))
+# suppressWarnings(library(doParallel))
+# suppressWarnings(library(foreach))
+# suppressWarnings(library(scales))
+# suppressWarnings(library(data.table))
+# suppressWarnings(library(mapplots))
+# suppressWarnings(library(ggplot2))
+# suppressWarnings(library(repmis))
 ```
 
 We also need a few data sets that can be downloaded into R from the Github Data repository (https://github.com/JorGarMol/VoCC_data_sets) companion to the package. See the repository readme file for description of the data sets.
 
 ```{r message=FALSE}
-source_data("https://github.com/JorGarMol/VoCC_data_sets/blob/master/Data/HadiSST.rda?raw=true") # HSST data set
-source_data("https://github.com/JorGarMol/VoCC_data_sets/blob/master/Data/EZZs.rda?raw=true") # EEZs data set
-source_data("https://github.com/JorGarMol/VoCC_data_sets/blob/master/Data/marshift.rda?raw=true") # marshift data set
-source_data("https://github.com/JorGarMol/VoCC_data_sets/blob/master/Data/traj25.rda?raw=true") # traj25 data set
+# load(url("https://github.com/JorGarMol/VoCC_data_sets/blob/master/Data/HadiSST.rda?raw=true") # HSST data set
+HadiSST <- VoCC_get_data(path = "HSST.tif")
+
+# source_data("https://github.com/JorGarMol/VoCC_data_sets/blob/master/Data/EZZs.rda?raw=true") # EEZs data set
+EEZ <- VoCC_get_data(path = "EEZ.gpkg")
+
+load(url("https://github.com/JorGarMol/VoCC_data_sets/blob/master/Data/marshift.rda?raw=true")) # marshift data set
+
+# load(url("https://github.com/JorGarMol/VoCC_data_sets/blob/master/Data/traj25.rda?raw=true")) # traj25 data set
 ```
 
 
@@ -61,7 +67,10 @@ Next, we calculate the gradient- and distance-based velocities (1960-2009), usin
 
 ```{r}
 # monthly to annual averages
-r <- sumSeries(HadiSST, p = "1960-01/2009-12", yr0 = "1955-01-01", l = nlayers(HadiSST), fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
+r <- sumSeries(HadiSST, p = "1960-01/2009-12", yr0 = "1955-01-01", 
+               l = terra::nlyr(HadiSST), 
+               fun = function(x) colMeans(x, na.rm = TRUE), 
+               freqin = "months", freqout = "years")
 # temporal trend
 vt <- tempTrend(r, th = 10)
 # spatial gradient

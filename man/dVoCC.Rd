@@ -58,7 +58,6 @@ other (target) cells in the future by reference to a specified climatic threshol
 specification of search distances and incorporates both least-cost path and Great Circle (as-the-crow-flies) distances.
 }
 \examples{
-\dontrun{
 JapTC <- VoCC_get_data("JapTC.tif")
 
 # Create a data frame with the necessary variables in the required order
@@ -71,6 +70,11 @@ avocc1 <- dVoCC(clim,
   geoTol = 160, distfun = "GreatCircle", trans = NA, lonlat = TRUE
 )
 
+r1 <- JapTC
+r1[avocc1$focal] <- avocc1$vel
+terra::plot(r1)
+
+\dontrun{
 
 # Cell-specific, distance-unrestricted climate analogue velocity based on least-cost path distances
 # First, create the conductance matrix (all land cells considered to have conductance of 1)
@@ -91,6 +95,7 @@ r1[avocc1$focal] <- avocc1$vel
 r2[avocc2$focal] <- avocc2$vel
 terra::plot(c(r1, r2))
 }
+
 }
 \references{
 \href{https://onlinelibrary.wiley.com/doi/full/10.1111/j.1466-822X.2006.00245.x}{Ohlemuller et al. 2006}. Towards European climate risk surfaces: the extent and distribution of analogous and non-analogous climates 1931-2100. Global Ecology and Biogeography, 15, 395-405. \cr

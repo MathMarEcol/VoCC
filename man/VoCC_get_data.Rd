@@ -19,6 +19,6 @@ Return data location and data if requested
 
 VoCC_get_data()
 
-HSST <- VoCC_get_data(path = "HSST")
+HSST <- VoCC_get_data(path = "HSST.tif")
 
 }

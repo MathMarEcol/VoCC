@@ -58,4 +58,3 @@ NULL
 #' surface temperature, sea ice, and night marine air temperature since the late nineteenth century. J. Geophys. Res.Vol. 108: 4407.
 #'
 NULL
-

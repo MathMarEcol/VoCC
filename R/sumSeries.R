@@ -34,30 +34,39 @@
 #'
 #' # Calculate mean annual monthly SST
 #'
-#' yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-#' fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
+#' yrSST <- sumSeries(HSST,
+#'   p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
+#'   fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"
+#' )
 #'
 #' # Extract Jul Aug mean SST each year (xts months are indexed from 0 to 11)
 #'
-#' myf = function(x, m = c(7,8)){
-#' x[xts::.indexmon(x) %in% (m-1)]
+#' myf <- function(x, m = c(7, 8)) {
+#'   x[xts::.indexmon(x) %in% (m - 1)]
 #' }
 #'
-#' JlAugSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
-#' fun = myf, freqin = "months", freqout = "other")
+#' JlAugSST <- sumSeries(HSST,
+#'   p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
+#'   fun = myf, freqin = "months", freqout = "other"
+#' )
 #'
 #' # Same but calculating the annual variance of the two months
 #'
-#' myf = function(x, m = c(7,8)){
-#' x1 <- x[xts::.indexmon(x) %in% (m-1)]
-#' xts::apply.yearly(x1, function(y) apply(y, 2, function(y){var(y, na.rm = TRUE)}))
+#' myf <- function(x, m = c(7, 8)) {
+#'   x1 <- x[xts::.indexmon(x) %in% (m - 1)]
+#'   xts::apply.yearly(x1, function(y) {
+#'     apply(y, 2, function(y) {
+#'       var(y, na.rm = TRUE)
+#'     })
+#'   })
 #' }
 #'
-#' meanJASST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
-#' fun = myf, freqin = "months", freqout = "other")
+#' meanJASST <- sumSeries(HSST,
+#'   p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
+#'   fun = myf, freqin = "months", freqout = "other"
+#' )
 #'
-sumSeries <- function(r, p, yr0, l = terra::nlyr(r), fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"){
-
+sumSeries <- function(r, p, yr0, l = terra::nlyr(r), fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years") {
   # construct xts object
   m <- t(terra::values(r))
   dates <- seq(as.Date(yr0), length = l, by = freqin)
@@ -66,28 +75,34 @@ sumSeries <- function(r, p, yr0, l = terra::nlyr(r), fun = function(x) colMeans(
   x <- ts1[p]
 
   # calculate the annual series
-  if (freqout == "weeks") {s <- xts::apply.weekly(x, fun)}
-  if (freqout == "months") {s <- xts::apply.monthly(x, fun)}
-  if (freqout == "quarters") {s <- xts::apply.quarterly(x, fun)}    # Jan-Mar (Q1); Apr-Jn (Q2); Jl-Sep(Q3); Oct-Dec (Q4)
-  if (freqout == "years") {s <- xts::apply.yearly(x, fun)}
-  if (freqout == "other") {s <- fun(x)}
+  if (freqout == "weeks") {
+    s <- xts::apply.weekly(x, fun)
+  }
+  if (freqout == "months") {
+    s <- xts::apply.monthly(x, fun)
+  }
+  if (freqout == "quarters") {
+    s <- xts::apply.quarterly(x, fun)
+  } # Jan-Mar (Q1); Apr-Jn (Q2); Jl-Sep(Q3); Oct-Dec (Q4)
+  if (freqout == "years") {
+    s <- xts::apply.yearly(x, fun)
+  }
+  if (freqout == "other") {
+    s <- fun(x)
+  }
 
   # create raster stack
-  for(i in 1:nrow(s)){
+  for (i in 1:nrow(s)) {
     r2 <- terra::rast(r[[1]])
-    r2[] <-  as.numeric(s[i,])
-    if(i == 1) {
+    r2[] <- as.numeric(s[i, ])
+    if (i == 1) {
       r1 <- r2
-    } else{
+    } else {
       r1 <- c(r1, r2)
     }
-
   }
   if (freqout != "other") {
     names(r1) <- seq(stats::start(x), length = terra::nlyr(r1), by = freqout)
   }
   return(r1)
 }
-
-
-

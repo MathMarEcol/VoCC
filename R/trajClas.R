@@ -48,13 +48,15 @@
 #' HSST <- VoCC_get_data("HSST.tif")
 #'
 #' # input raster layers
-#' yrSST <- sumSeries(HSST, p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-#' fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
+#' yrSST <- sumSeries(HSST,
+#'   p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
+#'   fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"
+#' )
 #'
 #' mn <- terra::mean(yrSST, na.rm = TRUE)
 #' tr <- tempTrend(yrSST, th = 10)
 #' sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
-#' v <- gVoCC(tr,sg)
+#' v <- gVoCC(tr, sg)
 #' vel <- v[[1]]
 #' ang <- v[[2]]
 #'
@@ -63,33 +65,41 @@
 #' mnd <- terra::disagg(mn, 4)
 #' veld <- terra::disagg(vel, 4)
 #' angd <- terra::disagg(ang, 4)
-#' lonlat <- stats::na.omit(data.frame(terra::xyFromCell(veld, 1:terra::ncell(veld)),
-#'                                     veld[], angd[], mnd[]))[,1:2]
+#' lonlat <- stats::na.omit(data.frame(
+#'   terra::xyFromCell(veld, 1:terra::ncell(veld)),
+#'   veld[], angd[], mnd[]
+#' ))[, 1:2]
 #'
 #' traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
 #'
 #' # Generate the trajectory-based classification
-#' clas <- trajClas(traj, vel,ang, mn, trajSt = 16, tyr = 50, nmL = 20, smL = 100,
-#' Nend = 45, Nst = 15, NFT = 70, DateLine = FALSE)
+#' clas <- trajClas(traj, vel, ang, mn,
+#'   trajSt = 16, tyr = 50, nmL = 20, smL = 100,
+#'   Nend = 45, Nst = 15, NFT = 70, DateLine = FALSE
+#' )
 #'
 #' # Define first the colour palette for the full set of categories
-#' my_col = c('gainsboro', 'darkseagreen1', 'coral4', 'firebrick2', 'mediumblue', 'darkorange1',
-#' 'magenta1', 'cadetblue1', 'yellow1')
+#' my_col <- c(
+#'   "gainsboro", "darkseagreen1", "coral4", "firebrick2", "mediumblue", "darkorange1",
+#'   "magenta1", "cadetblue1", "yellow1"
+#' )
 #' # Keep only the categories present in our raster
 #' my_col <- my_col[sort(unique(clas[[7]][]))]
 #'
 #' # Classify raster / build attribute table
 #' clasr <- ratify(clas[[7]])
-#' rat_r <-levels(clasr)[[1]]
-#' rat_r$trajcat <- c("N-M", "S-M", "IS", "BS", "Srce",
-#'                    "RS", "Cor", "Div", "Con")[sort(unique(clas[[7]][]))]
+#' rat_r <- levels(clasr)[[1]]
+#' rat_r$trajcat <- c(
+#'   "N-M", "S-M", "IS", "BS", "Srce",
+#'   "RS", "Cor", "Div", "Con"
+#' )[sort(unique(clas[[7]][]))]
 #' levels(clasr) <- rat_r
 #' # Produce the plot using the rasterVis levelplot function
-#' rasterVis::levelplot(clasr, col.regions = my_col,
-#'                      xlab = NULL, ylab = NULL, scales = list(draw=FALSE))
-
-trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL ,Nend, Nst, NFT, DateLine = FALSE){
-
+#' rasterVis::levelplot(clasr,
+#'   col.regions = my_col,
+#'   xlab = NULL, ylab = NULL, scales = list(draw = FALSE)
+#' )
+trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL, Nend, Nst, NFT, DateLine = FALSE) {
   ang1 <- ang2 <- ang3 <- ang4 <- d1 <- d2 <- d3 <- d4 <- NULL # Fix devtools check warnings
   isink <- .SD <- .N <- cid <- coastal <- val <- NULL # Fix devtools check warnings
 
@@ -98,36 +108,38 @@ trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL ,Nend, Nst, NFT, 
 
   # add cell ID to the data frame
   traj <- data.table::data.table(traj)
-  traj$cid <- terra::cellFromXY(ang, traj[,1:2])
+  traj$cid <- terra::cellFromXY(ang, traj[, 1:2])
 
   # A. Number of traj starting from each cell
   TrajSt[!is.na(ang[])] <- trajSt
 
   # B. Number of traj ending in each cell
-  tr <- traj[, data.table::.SD[.N], by = trajIDs]  # subset last point of each trajectory
-  enTraj <- tr[,.N, by = cid]
+  tr <- traj[, data.table::.SD[.N], by = trajIDs] # subset last point of each trajectory
+  enTraj <- tr[, .N, by = cid]
   TrajEnd[!is.na(vel)] <- 0
   TrajEnd[enTraj$cid] <- enTraj$N
 
   # C. Number of traj flowing through each cell
   cxtrj <- unique(traj, by = c("trajIDs", "cid"))
-  TotTraj <- cxtrj[,.N, by = cid]       # total number of trajectories per cell
+  TotTraj <- cxtrj[, .N, by = cid] # total number of trajectories per cell
   TrajFT[!is.na(vel)] <- 0
   TrajFT[TotTraj$cid] <- TotTraj$N
-  TrajFT <- TrajFT - TrajEnd - TrajSt   # subtract traj starting and ending to get those actually transversing the cell
-  TrajFT[TrajFT[] < 0] <- 0   # to avoid negative values in ice covered cells
+  TrajFT <- TrajFT - TrajEnd - TrajSt # subtract traj starting and ending to get those actually transversing the cell
+  TrajFT[TrajFT[] < 0] <- 0 # to avoid negative values in ice covered cells
 
   # C. Identify cell location for internal sinks (groups of 4 endorheic cells with angles pointing inwards)
   ll <- data.table::data.table(terra::xyFromCell(ang, 1:terra::ncell(ang)))
-  ll[,1:2] <- ll[,1:2] + 0.1   # add small offset to the centroid
+  ll[, 1:2] <- ll[, 1:2] + 0.1 # add small offset to the centroid
 
   # TODO There isn't a direct replaceyment for fourCellsFromXY. Need to look at equivalent code options
-  a <- fourCellsFromXY(ang, as.matrix(ll[,1:2]))
+  a <- fourCellsFromXY(ang, as.matrix(ll[, 1:2]))
   a <- t(apply(a, 1, sort))
 
   # If date line crossing, correct sequences on date line
-  if(DateLine == TRUE){
-    a[seq(ncol(ang), by = ncol(ang), length = nrow(ang)),] <- t(apply(a[seq(ncol(ang), by = ncol(ang), length = nrow(ang)),], 1, function(x) {x[c(2,1,4,3)]}))
+  if (DateLine == TRUE) {
+    a[seq(ncol(ang), by = ncol(ang), length = nrow(ang)), ] <- t(apply(a[seq(ncol(ang), by = ncol(ang), length = nrow(ang)), ], 1, function(x) {
+      x[c(2, 1, 4, 3)]
+    }))
   }
 
   # Extract the angles for each group of 4 cells
@@ -135,7 +147,7 @@ trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL ,Nend, Nst, NFT, 
   ll[, c("c1", "c2", "c3", "c4", "ang1", "ang2", "ang3", "ang4") := data.frame(a, b)]
 
   # now look if the 4 angles point inwards (internal sink)
-  ll[, c("d1", "d2", "d3", "d4") := list(((ang1 - 180)  *  (90 - ang1)), ((ang2 - 270)  *  (180 - ang2)), ((ang3 - 90)  *  (0 - ang3)), ((ang4 - 360)  *  (270 - ang4)))]
+  ll[, c("d1", "d2", "d3", "d4") := list(((ang1 - 180) * (90 - ang1)), ((ang2 - 270) * (180 - ang2)), ((ang3 - 90) * (0 - ang3)), ((ang4 - 360) * (270 - ang4)))]
   ll[, isink := 0L]
   ll[d1 > 0 & d2 > 0 & d3 > 0 & d4 > 0, isink := 1L]
 
@@ -146,19 +158,21 @@ trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL ,Nend, Nst, NFT, 
 
   # D. Identify cell location for boundary sinks (coastal cells which are disconected from cooler climates under warming or warmer climates under cooling)
   # detect coastal cells
-  coast <- suppressWarnings(terra::boundaries(vel, type = 'inner', asNA = TRUE))       # to avoid warning for coercing NAs via asNA = TRUE
+  coast <- suppressWarnings(terra::boundaries(vel, type = "inner", asNA = TRUE)) # to avoid warning for coercing NAs via asNA = TRUE
 
   # make a list of vel values and SST values for each coastal cells and their marine neighbours
   cc <- stats::na.omit(data.table::data.table(cid = 1:terra::ncell(vel), coast = coast[]))
   ad <- terra::adjacent(vel, cc$cid, 8, sorted = TRUE, include = TRUE) # matrix with adjacent cells
-  ad <- data.table::data.table(coastal = ad[,1],
-                               adjacent = ad[,2],
-                               cvel = vel[ad[,1]],
-                               ctemp = mn[ad[,1]],
-                               atemp = mn[ad[,2]])
+  ad <- data.table::data.table(
+    coastal = ad[, 1],
+    adjacent = ad[, 2],
+    cvel = vel[ad[, 1]],
+    ctemp = mn[ad[, 1]],
+    atemp = mn[ad[, 2]]
+  )
 
   # locate the sinks
-  ad <- stats::na.omit(ad[ad$cvel != 0,])      # remove cells with 0 velocity (ice) and with NA (land neighbours)
+  ad <- stats::na.omit(ad[ad$cvel != 0, ]) # remove cells with 0 velocity (ice) and with NA (land neighbours)
   j <- ad[, ifelse(.SD$cvel > 0, all(.SD$ctemp <= .SD$atemp), all(.SD$ctemp >= .SD$atemp)), by = coastal]
   data.table::setkey(j)
   j <- unique(j)
@@ -168,12 +182,12 @@ trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL ,Nend, Nst, NFT, 
   # Total number of trajectories per cell and proportions per cell
   TrajTotal <- sum(c(TrajSt, TrajFT, TrajEnd), na.rm = TRUE)
   TrajTotal[is.na(ang[])] <- NA
-  PropTrajEnd <- (TrajEnd/TrajTotal)*100
-  PropTrajFT <- (TrajFT/TrajTotal)*100
-  PropTrajSt <- (TrajSt/TrajTotal)*100
+  PropTrajEnd <- (TrajEnd / TrajTotal) * 100
+  PropTrajFT <- (TrajFT / TrajTotal) * 100
+  PropTrajSt <- (TrajSt / TrajTotal) * 100
 
   # reclassify by traj length
-  rclM <- matrix(c(0, (nmL/tyr), 1, (nmL/tyr), (smL/tyr), 2, (smL/tyr), Inf, 3), ncol=3, byrow=TRUE)
+  rclM <- matrix(c(0, (nmL / tyr), 1, (nmL / tyr), (smL / tyr), 2, (smL / tyr), Inf, 3), ncol = 3, byrow = TRUE)
   v <- terra::rast(vel)
   v[] <- abs(vel[])
   ClassMov <- terra::classify(v, rclM)
@@ -197,7 +211,7 @@ trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL ,Nend, Nst, NFT, 
   d[, Nend := PropTrajEnd[d$cid]]
   d[, Nst := PropTrajSt[d$cid]]
   d[, NFT := PropTrajFT[d$cid]]
-  d$clas <- ifelse(d$Nend == 0, 5, ifelse(d$Nend > Nend & d$Nst < Nst, 6, ifelse(d$NFT > NFT, 7,ifelse(d$Nend < d$Nst, 8, 9))))
+  d$clas <- ifelse(d$Nend == 0, 5, ifelse(d$Nend > Nend & d$Nst < Nst, 6, ifelse(d$NFT > NFT, 7, ifelse(d$Nend < d$Nst, 8, 9))))
   TrajClas[d$cid] <- d$clas
 
   # return raster
@@ -205,18 +219,3 @@ trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL ,Nend, Nst, NFT, 
   names(s) <- c("PropEnd", "PropFT", "PropSt", "ClassL", "IntS", "BounS", "TrajClas")
   return(s)
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

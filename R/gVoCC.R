@@ -21,18 +21,19 @@
 #' @examples
 #'
 #' HSST <- VoCC_get_data("HSST.tif")
-#' yrSST <- sumSeries(HSST, p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-#'     fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
+#' yrSST <- sumSeries(HSST,
+#'   p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
+#'   fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"
+#' )
 #' tr <- tempTrend(yrSST, th = 10)
 #' sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
 #'
 #' # Magnitude and angle of the climate velocity (km/yr) 1960-2009
 #'
-#' v <- gVoCC(tr,sg)
+#' v <- gVoCC(tr, sg)
 #' terra::plot(v)
 #'
-
-gVoCC <- function(tempTrend, spatGrad){
+gVoCC <- function(tempTrend, spatGrad) {
   VoCC <- tempTrend[[1]] / spatGrad[[1]]
 
   # velocity angles have opposite direction to the spatial climatic gradient if warming and same direction (cold to warm) if cooling
@@ -44,4 +45,3 @@ gVoCC <- function(tempTrend, spatGrad){
   names(output) <- c("voccMag", "voccAng")
   return(output)
 }
-

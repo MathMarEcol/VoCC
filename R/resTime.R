@@ -23,12 +23,14 @@
 #' EEZ <- VoCC_get_data("EEZ.gpkg")
 #' HSST <- VoCC_get_data("HSST.tif")
 #'
-#' yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-#' fun = function(x) colMeans(x, na.rm = TRUE),
-#' freqin = "months", freqout = "years")
+#' yrSST <- sumSeries(HSST,
+#'   p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
+#'   fun = function(x) colMeans(x, na.rm = TRUE),
+#'   freqin = "months", freqout = "years"
+#' )
 #' tr <- tempTrend(yrSST, th = 10)
 #' sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
-#' v <- gVoCC(tr,sg)
+#' v <- gVoCC(tr, sg)
 #' vel <- v[[1]]
 #'
 #' # Calculating area internally
@@ -43,35 +45,28 @@
 #' x_coord <- c(-28, -20, -20.3, -25.5)
 #' y_coord <- c(60, 61, 63, 62)
 #' p <- Polygon(cbind(x_coord, y_coord))
-#' sps <- SpatialPolygons(list(Polygons(list(p),1)))
+#' sps <- SpatialPolygons(list(Polygons(list(p), 1)))
 #' a3 <- resTime(sps, vel, areapg = NA)
 #'
 #' terra::plot(vel)
 #' terra::plot(EEZ, add = TRUE)
 #' terra::plot(sps, add = TRUE)
-#'}
-
-resTime <- function(pg, vel, areapg = NA){
-
+#' }
+resTime <- function(pg, vel, areapg = NA) {
   resTim <- v <- d <- NULL # Fix devtools check warnings
 
   RT <- suppressWarnings(
     data.table::data.table(ID = sp::getSpPPolygonsIDSlots(pg)) # TODO Is this just accessing the actual polygons?
   )
 
-  RT[, v := terra::extract(vel, pg, fun=mean, na.rm=TRUE)]
+  RT[, v := terra::extract(vel, pg, fun = mean, na.rm = TRUE)]
 
   # If not provided, calculate the area of the polygon
-  if(all(is.na(areapg))){
-    areapg <- geosphere::areaPolygon(pg)/1000000 # area polygon in km2 #TODO I think we can do this internally, potentially with terra, without an extra package
+  if (all(is.na(areapg))) {
+    areapg <- geosphere::areaPolygon(pg) / 1000000 # area polygon in km2 #TODO I think we can do this internally, potentially with terra, without an extra package
   }
 
-  RT[, d := 2*sqrt((areapg/pi))]
-  RT[, resTim := abs(d/v)]
+  RT[, d := 2 * sqrt((areapg / pi))]
+  RT[, resTim := abs(d / v)]
   return(RT[])
 }
-
-
-
-
-

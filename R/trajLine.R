@@ -21,11 +21,13 @@
 #'
 #' HSST <- VoCC_get_data("HSST.tif")
 #'
-#' yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-#' fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
+#' yrSST <- sumSeries(HSST,
+#'   p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
+#'   fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"
+#' )
 #' tr <- tempTrend(yrSST, th = 10)
 #' sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
-#' v <- gVoCC(tr,sg)
+#' v <- gVoCC(tr, sg)
 #' vel <- v[[1]]
 #' ang <- v[[2]]
 #'
@@ -33,8 +35,10 @@
 #' mn <- terra::mean(yrSST, na.rm = TRUE)
 #'
 #' # get the set of starting cells for the trajectories
-#' lonlat <- stats::na.omit(data.frame(terra::xyFromCell(vel, 1:terra::ncell(vel)),
-#'                                     vel[], ang[], mn[]))[,1:2]
+#' lonlat <- stats::na.omit(data.frame(
+#'   terra::xyFromCell(vel, 1:terra::ncell(vel)),
+#'   vel[], ang[], mn[]
+#' ))[, 1:2]
 #'
 #' # Calculate trajectories.
 #' traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
@@ -48,29 +52,27 @@
 #' # Export as ESRI shape file
 #' terra::writeVector(lns, filename = "velTraj", filetype = "ESRI Shapefile")
 #' }
-
-trajLine <- function (x, projx = "EPSG::4326"){
-
+trajLine <- function(x, projx = "EPSG::4326") {
   coordinates <- NULL # Fix devtools check warnings
 
   spl <- split(x, x$trajIDs)
 
   # remove traj consisting of a single point
-  i <- sapply(spl, function(x) {nrow(x) == 1})
+  i <- sapply(spl, function(x) {
+    nrow(x) == 1
+  })
   spl <- spl[!i]
 
   lns <- vector("list", length(spl))
   for (i in 1:length(spl)) {
-    s <- which(abs(diff(coordinates(spl[[i]][,1:2]))) > 180)
-    if(length(s) > 0){
-      SPL <- split(as.data.frame(coordinates(spl[[i]][,1:2])), cumsum(1:nrow(coordinates(spl[[i]][,1:2])) %in% (s+1)))
+    s <- which(abs(diff(coordinates(spl[[i]][, 1:2]))) > 180)
+    if (length(s) > 0) {
+      SPL <- split(as.data.frame(coordinates(spl[[i]][, 1:2])), cumsum(1:nrow(coordinates(spl[[i]][, 1:2])) %in% (s + 1)))
       lns[[i]] <- Lines(lapply(SPL, function(x) Line(coordinates(x))), ID = i)
-    }else{
-      lns[[i]] <- Lines(list(Line(coordinates(spl[[i]][,1:2]))), ID = i)
-    }}
+    } else {
+      lns[[i]] <- Lines(list(Line(coordinates(spl[[i]][, 1:2]))), ID = i)
+    }
+  }
 
   SpatialLinesDataFrame(SpatialLines(lns, proj4string = terra::crs(projx)), data = data.frame(trajIDs = unique(x$trajIDs)))
 }
-
-
-

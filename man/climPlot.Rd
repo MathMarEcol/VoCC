@@ -30,17 +30,23 @@ Function to create a binned scatter plot of two climate variables.
 JapTC <- VoCC_get_data("JapTC.tif")
 
 # Plot climate space for the two first variables(annual precipitation and maximum temperature)
-xy <- stats::na.omit(data.frame(terra::values(JapTC[[1]]),
-                                  terra::values(JapTC[[2]]),
-terra::values(JapTC[[3]]), terra::values(JapTC[[4]])))
+xy <- stats::na.omit(data.frame(
+  terra::values(JapTC[[1]]),
+  terra::values(JapTC[[2]]),
+  terra::values(JapTC[[3]]), terra::values(JapTC[[4]])
+))
 
-out <- climPlot(xy, x.binSize = 5, y.binSize = 0.2, x.name="Precipitation (mm)",
-y.name="Temperature max (°C)")
+out <- climPlot(xy,
+  x.binSize = 5, y.binSize = 0.2, x.name = "Precipitation (mm)",
+  y.name = "Temperature max (°C)"
+)
 
 \dontrun{
 # output plots can be saved as:
-ggplot2::ggsave(plot=out, filename=file.path(getwd(), "example_plot.pdf"),
-                width=17, height=17, unit="cm")
+ggplot2::ggsave(
+  plot = out, filename = file.path(getwd(), "example_plot.pdf"),
+  width = 17, height = 17, unit = "cm"
+)
 }
 }
 \seealso{

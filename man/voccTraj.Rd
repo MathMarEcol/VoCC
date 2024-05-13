@@ -43,12 +43,14 @@ approach in that iterations of a trajectory are based on cumulative time travell
 
 HSST <- VoCC_get_data("HSST.tif")
 
-yrSST <- sumSeries(HSST, p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-fun = function(x) colMeans(x, na.rm = TRUE),
-freqin = "months", freqout = "years")
+yrSST <- sumSeries(HSST,
+  p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
+  fun = function(x) colMeans(x, na.rm = TRUE),
+  freqin = "months", freqout = "years"
+)
 tr <- tempTrend(yrSST, th = 10)
 sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
-v <- gVoCC(tr,sg)
+v <- gVoCC(tr, sg)
 vel <- v[[1]]
 ang <- v[[2]]
 
@@ -56,8 +58,10 @@ ang <- v[[2]]
 mn <- mean(yrSST, na.rm = T)
 
 # Get the set of starting cells for the trajectories
-lonlat <- stats::na.omit(data.frame(terra::xyFromCell(vel, 1:terra::ncell(vel)),
-                                    vel[], ang[], mn[]))[,1:2]
+lonlat <- stats::na.omit(data.frame(
+  terra::xyFromCell(vel, 1:terra::ncell(vel)),
+  vel[], ang[], mn[]
+))[, 1:2]
 
 # Calculate trajectories
 # The following throws an error due to the trajectories moving beyond the raster extent

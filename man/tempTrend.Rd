@@ -28,8 +28,10 @@ gradient-based climate velocity using gVoCC.
 
 HSST <- VoCC_get_data("HSST.tif")
 
-yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
+yrSST <- sumSeries(HSST,
+  p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
+  fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"
+)
 
 # Mean annual SST trend (minimum threshold of 10 years of data), with SE and p-values.
 

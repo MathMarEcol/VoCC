@@ -51,27 +51,37 @@ HSST <- VoCC_get_data("HSST.tif")
 
 # Calculate mean annual monthly SST
 
-yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
+yrSST <- sumSeries(HSST,
+  p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
+  fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"
+)
 
 # Extract Jul Aug mean SST each year (xts months are indexed from 0 to 11)
 
-myf = function(x, m = c(7,8)){
-x[xts::.indexmon(x) \%in\% (m-1)]
+myf <- function(x, m = c(7, 8)) {
+  x[xts::.indexmon(x) \%in\% (m - 1)]
 }
 
-JlAugSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
-fun = myf, freqin = "months", freqout = "other")
+JlAugSST <- sumSeries(HSST,
+  p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
+  fun = myf, freqin = "months", freqout = "other"
+)
 
 # Same but calculating the annual variance of the two months
 
-myf = function(x, m = c(7,8)){
-x1 <- x[xts::.indexmon(x) \%in\% (m-1)]
-xts::apply.yearly(x1, function(y) apply(y, 2, function(y){var(y, na.rm = TRUE)}))
+myf <- function(x, m = c(7, 8)) {
+  x1 <- x[xts::.indexmon(x) \%in\% (m - 1)]
+  xts::apply.yearly(x1, function(y) {
+    apply(y, 2, function(y) {
+      var(y, na.rm = TRUE)
+    })
+  })
 }
 
-meanJASST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
-fun = myf, freqin = "months", freqout = "other")
+meanJASST <- sumSeries(HSST,
+  p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
+  fun = myf, freqin = "months", freqout = "other"
+)
 
 }
 \references{

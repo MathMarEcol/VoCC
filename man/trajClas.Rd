@@ -75,13 +75,15 @@ cell, respectively.
 HSST <- VoCC_get_data("HSST.tif")
 
 # input raster layers
-yrSST <- sumSeries(HSST, p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
+yrSST <- sumSeries(HSST,
+  p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
+  fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"
+)
 
 mn <- terra::mean(yrSST, na.rm = TRUE)
 tr <- tempTrend(yrSST, th = 10)
 sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
-v <- gVoCC(tr,sg)
+v <- gVoCC(tr, sg)
 vel <- v[[1]]
 ang <- v[[2]]
 
@@ -90,30 +92,40 @@ ang <- v[[2]]
 mnd <- terra::disagg(mn, 4)
 veld <- terra::disagg(vel, 4)
 angd <- terra::disagg(ang, 4)
-lonlat <- stats::na.omit(data.frame(terra::xyFromCell(veld, 1:terra::ncell(veld)),
-                                    veld[], angd[], mnd[]))[,1:2]
+lonlat <- stats::na.omit(data.frame(
+  terra::xyFromCell(veld, 1:terra::ncell(veld)),
+  veld[], angd[], mnd[]
+))[, 1:2]
 
 traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
 
 # Generate the trajectory-based classification
-clas <- trajClas(traj, vel,ang, mn, trajSt = 16, tyr = 50, nmL = 20, smL = 100,
-Nend = 45, Nst = 15, NFT = 70, DateLine = FALSE)
+clas <- trajClas(traj, vel, ang, mn,
+  trajSt = 16, tyr = 50, nmL = 20, smL = 100,
+  Nend = 45, Nst = 15, NFT = 70, DateLine = FALSE
+)
 
 # Define first the colour palette for the full set of categories
-my_col = c('gainsboro', 'darkseagreen1', 'coral4', 'firebrick2', 'mediumblue', 'darkorange1',
-'magenta1', 'cadetblue1', 'yellow1')
+my_col <- c(
+  "gainsboro", "darkseagreen1", "coral4", "firebrick2", "mediumblue", "darkorange1",
+  "magenta1", "cadetblue1", "yellow1"
+)
 # Keep only the categories present in our raster
 my_col <- my_col[sort(unique(clas[[7]][]))]
 
 # Classify raster / build attribute table
 clasr <- ratify(clas[[7]])
-rat_r <-levels(clasr)[[1]]
-rat_r$trajcat <- c("N-M", "S-M", "IS", "BS", "Srce",
-                   "RS", "Cor", "Div", "Con")[sort(unique(clas[[7]][]))]
+rat_r <- levels(clasr)[[1]]
+rat_r$trajcat <- c(
+  "N-M", "S-M", "IS", "BS", "Srce",
+  "RS", "Cor", "Div", "Con"
+)[sort(unique(clas[[7]][]))]
 levels(clasr) <- rat_r
 # Produce the plot using the rasterVis levelplot function
-rasterVis::levelplot(clasr, col.regions = my_col,
-                     xlab = NULL, ylab = NULL, scales = list(draw=FALSE))
+rasterVis::levelplot(clasr,
+  col.regions = my_col,
+  xlab = NULL, ylab = NULL, scales = list(draw = FALSE)
+)
 }
 \references{
 \href{https://www.nature.com/articles/nature12976}{Burrows et al. 2014}. Geographical limits to species-range shifts are suggested by climate velocity. Nature, 507, 492-495.

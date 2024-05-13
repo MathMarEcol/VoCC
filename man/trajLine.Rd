@@ -27,11 +27,13 @@ Create a spatial line data frame object from trajectory points.
 
 HSST <- VoCC_get_data("HSST.tif")
 
-yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
+yrSST <- sumSeries(HSST,
+  p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
+  fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"
+)
 tr <- tempTrend(yrSST, th = 10)
 sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
-v <- gVoCC(tr,sg)
+v <- gVoCC(tr, sg)
 vel <- v[[1]]
 ang <- v[[2]]
 
@@ -39,8 +41,10 @@ ang <- v[[2]]
 mn <- terra::mean(yrSST, na.rm = TRUE)
 
 # get the set of starting cells for the trajectories
-lonlat <- stats::na.omit(data.frame(terra::xyFromCell(vel, 1:terra::ncell(vel)),
-                                    vel[], ang[], mn[]))[,1:2]
+lonlat <- stats::na.omit(data.frame(
+  terra::xyFromCell(vel, 1:terra::ncell(vel)),
+  vel[], ang[], mn[]
+))[, 1:2]
 
 # Calculate trajectories.
 traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)

@@ -31,8 +31,10 @@ to be used for the calculation of the gradient-based climate velocity using gVoC
 
 HSST <- VoCC_get_data("HSST.tif")
 
-yrSST <- sumSeries(HSST, p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years")
+yrSST <- sumSeries(HSST,
+  p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
+  fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"
+)
 
 # Spatial gradient (magnitude and angle) for the average mean annual SST.
 

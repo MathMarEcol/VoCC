@@ -3,14 +3,14 @@
 #'
 #' @param path Filename of data if known.
 #'
-#' @return
+#' @return The path as a character string, or a dataset
 #' @export
 #'
 #' @examples
 #'
 #' VoCC_get_data()
 #'
-#' HSST <- VoCC_get_data(path = "HSST)
+#' HSST <- VoCC_get_data(path = "HSST")
 #'
 VoCC_get_data <- function(path = NULL) {
 

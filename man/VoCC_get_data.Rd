@@ -9,6 +9,16 @@ VoCC_get_data(path = NULL)
 \arguments{
 \item{path}{Filename of data if known.}
 }
+\value{
+The path as a character string, or a dataset
+}
 \description{
 Return data location and data if requested
+}
+\examples{
+
+VoCC_get_data()
+
+HSST <- VoCC_get_data(path = "HSST")
+
 }

@@ -2,8 +2,9 @@
 #'
 #' Function to calculate vocc trajectories after Burrows et al (2014). Trajectories
 #' are calculated by propagating climatic isopleths using the magnitude and direction of
-#' local (cell) velocities. This is a slightly modified version of the original Burrows et al. (2014)
-#' approach in that iterations of a trajectory are based on cumulative time travelled instead of using fixed time steps.
+#' local (cell) velocities. This is a slightly modified version of the original
+#' Burrows et al. (2014) approach in that iterations of a trajectory are based on
+#' cumulative time traveled instead of using fixed time steps.
 #'
 #' @param lonlat \code{data.frame} with the longitude and latitude (in decimal degrees)
 #' of the points to project.
@@ -38,14 +39,20 @@
 #'   fun = function(x) colMeans(x, na.rm = TRUE),
 #'   freqin = "months", freqout = "years"
 #' )
+#'
+#' # Long-term local climatic trends
 #' tr <- tempTrend(yrSST, th = 10)
+#'
+#' # Local spatial climatic gradients
 #' sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
+#'
+#' # Gradient-based climate velocity
 #' v <- gVoCC(tr, sg)
 #' vel <- v[[1]]
 #' ang <- v[[2]]
 #'
 #' # Calculate the annual SST mean over the period
-#' mn <- mean(yrSST, na.rm = T)
+#' mn <- terra::mean(yrSST, na.rm = TRUE)
 #'
 #' # Get the set of starting cells for the trajectories
 #' lonlat <- stats::na.omit(data.frame(
@@ -61,8 +68,9 @@
 #' traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
 #'
 voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct = FALSE) {
+
   if (correct == TRUE) {
-    e <- terra::ext(vel) + (rep(terra::res(vel), each = 2) * c(-1, 1, -1, 1))
+    e <- terra::ext(vel) + (rep(terra::res(vel), each = 2) * c(1, 1, 1, 1))
     vel <- terra::extend(vel, e, fill = NA)
     ang <- terra::extend(ang, e, fill = NA)
     mn <- terra::extend(mn, e, fill = NA)
@@ -92,34 +100,47 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
   # Calculate the trajectories
   pb <- utils::txtProgressBar(min = 0, max = 100, style = 3)
   while (sum(remaining <= 0) != nc) { # while there is at least one trajectory active
+
     utils::setTxtProgressBar(pb, 100 * (sum(remaining <= 0) / nc))
 
     llold <- lonlat # Take a copy of lonlat (starting cell xy)
     resto <- which(remaining > 0) # index with remaining active trajectories
+
     fcells <- terra::cellFromXY(vel, llold) # focal cells
 
     # Extract lon and lat of landing point for the remaining active trajectories
     # limit the displacement to 2 cell lengths to reduce later the number of intermediate points
     dth <- max(terra::res(vel)) * 222000
-    dis <- data.table::fifelse(dth < (abs(vel[fcells[resto]]) * remaining[resto] * 1000), dth, (abs(vel[fcells[resto]]) * remaining[resto] * 1000)[, 1])
+    dis <- data.table::fifelse(dth < (abs(vel[fcells[resto]]) * remaining[resto] * 1000), # If
+                               dth, # Do this
+                               (abs(vel[fcells[resto]]) * remaining[resto] * 1000)[, 1]) # else
 
+
+    # JDE - The error occurs here but doesn't start here. ang[fcells[resto]][, 1] is a NA and therefore NA is introduced into lonlat
+    # latlon is not NA, but it seems somewhere a land cell or a NA velocity cell is introduced into llold
+    # I think this starts on the previous iteration. Obviously a land cell is not corrected. I think this is in Step 4....
+
+    # distance input in meters. The function adjusts internally for -180-180 and pole crossings
     lonlat[resto, ] <- as.data.frame(
       geosphere::destPoint(p = llold[resto, ], b = ang[fcells[resto]][, 1], d = dis)
-    ) # distance input in meters. The function adjusts internally for -180-180 and pole crossings
-    tcells <- terra::cellFromXY(vel, lonlat)
+    )
 
-    # Step 1. where the trajectory is still in the same cell by tyr, it has terminated.
+     tcells <- terra::cellFromXY(vel, lonlat)
+
+    # Step 1. where the trajectory is still in the same cell by tyr, it has terminated. -----
     # Flag those trajectories by resetting the reminding time to 0 to get them out of the next iteration.
     remaining[fcells == tcells] <- 0
     if (sum(remaining == 0) == nc) {
       break # to avoid error when only 1 trajectory is left and finishes inside a cell
     }
 
-    # Step 2. For the rest, get the last point in the starting cell and the first point in a new cell
+    # Step 2. For the rest, get the last point in the starting cell and the first point in a new cell -----
     resto <- which(remaining > 0) # update resto
     d <- round((geosphere::distGeo(llold[resto, ], lonlat[resto, ]) / 1000), 0)
     d[d == 0] <- 1
-    Trajxy <- splitLine(A = llold[resto, ], B = lonlat[resto, ], n = d)
+
+
+    Trajxy <- splitLine(A = llold[resto, ], B = lonlat[resto, ], nn = d)
 
     # now get a list with the cells for the points in each trajectory
     if (is.list(Trajxy)) {
@@ -129,10 +150,12 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
       newcell <- mapply(function(X, Y) {
         X[Y]
       }, X = Trajcells, Y = index)
+
       # the coordinates for that first point out of the focal cell
       newxy <- as.data.frame(t(mapply(function(X, Y) {
         X[Y, ]
       }, X = Trajxy, Y = index)))
+
       # the coordinates for the last focal cell point
       oldxy <- as.data.frame(t(mapply(function(X, Y) {
         X[Y - 1, ]
@@ -160,20 +183,24 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
     # For those ending in land cells update lonlat info to the last marine point
     lonlat[resto, ][is.na(velend), ] <- oldxy[is.na(velend), ]
 
-    # Step 3. From step 3 onwards check if the trajectory has bounced back to the origin cell. If so, redirect along cell border.
+    # Step 3. From step 3 onwards check if the trajectory has bounced back to the origin cell.  -----
+    # If so, redirect along cell border.
     if (i >= 1) {
       current <- newcell[!is.na(velend)] # current cell
       last <- oldcell[!is.na(velend)] # last cell
       if (land == "Y" & bounce == "Y") { # Given the counter increases each time the trajectory table is updated,
         # where some traj hit land AND bounced in the previous iteration the values were repeated twice for all cells. Hence, need to go 3 steps back instead of 1
+        print("Option 1: Go back 3 steps")
         last2 <- terra::cellFromXY(vel, cbind(llon[(((i - 3) * nc) + 1):(((i - 3) * nc) + nc)][resto][!is.na(velend)], llat[(((i - 3) * nc) + 1):(((i - 3) * nc) + nc)][resto][!is.na(velend)])) # last but one cell
         land <- "N" # set back to no hit land
         bounce <- "N"
       } else if (xor(land == "Y", bounce == "Y")) { # if one of the two conditions then need to go two steps back
+        print("Option 2: Go back 2 steps")
         last2 <- terra::cellFromXY(vel, cbind(llon[(((i - 2) * nc) + 1):(((i - 2) * nc) + nc)][resto][!is.na(velend)], llat[(((i - 2) * nc) + 1):(((i - 2) * nc) + nc)][resto][!is.na(velend)]))
         land <- "N"
         bounce <- "N"
       } else { # if non of the two, then just one step back
+        print("Option 3: Go back 1 step")
         last2 <- terra::cellFromXY(vel, cbind(llon[(((i - 1) * nc) + 1):(((i - 1) * nc) + nc)][resto][!is.na(velend)], llat[(((i - 1) * nc) + 1):(((i - 1) * nc) + nc)][resto][!is.na(velend)]))
       }
 
@@ -185,22 +212,34 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
         # take the mean velocity from the appropriate lat/lon vel components.
         vb <- mapply(
           function(X, Y) {
-            ifelse(abs(X - Y) > 1, mean(c((vel[X] * sin(pi * ang[X] / 180)), (vel[Y] * sin(pi * ang[Y] / 180)))), mean(c((vel[X] * cos(pi * ang[X] / 180)), (vel[Y] * cos(pi * ang[Y] / 180)))))
-          },
+            ifelse(abs(X - Y) > 1, # if
+                   mean(c(as.numeric((vel[X] * sin(pi * ang[X] / 180))), as.numeric((vel[Y] * sin(pi * ang[Y] / 180))))), # do this
+                   mean(c(as.numeric((vel[X] * cos(pi * ang[X] / 180))), as.numeric((vel[Y] * cos(pi * ang[Y] / 180))))) # else do this
+            )},
           X = current[ind], Y = last[ind]
         )
 
         # take the corresponding angle (0/180 / 90/270 for lat / lon movements)
         ab <- mapply(function(X, Y, Z) {
-          ifelse(abs(X - Y) > 1 & Z > 0, 90, ifelse(abs(X - Y) > 1 & Z < 0, 270, ifelse(abs(X - Y) == 1 & Z > 0, 0, 180)))
-        }, X = current[ind], Y = last[ind], Z = vb)
+          ifelse(abs(X - Y) > 1 & Z > 0, # if
+                 90, # do this
+                 ifelse(abs(X - Y) > 1 & Z < 0, # else
+                        270, # do this
+                        ifelse(abs(X - Y) == 1 & Z > 0,
+                               0, # do this
+                               180 # else
+                        )))},
+          X = current[ind], Y = last[ind], Z = vb)
+
         if (is.matrix(ab)) {
           ab <- ab[, 1]
         }
 
         # Extract lon and lat of point previous to bounce and new destination point for the remaining active trajectories
         p <- oldxy[!is.na(velend), ][ind, ]
-        dis <- ifelse(dth < (abs(vb) * remaining[resto][!is.na(velend)][ind] * 1000), dth, (abs(vb) * remaining[resto][!is.na(velend)][ind] * 1000))
+        dis <- ifelse(dth < (abs(vb) * remaining[resto][!is.na(velend)][ind] * 1000),
+                      dth,
+                      (abs(vb) * remaining[resto][!is.na(velend)][ind] * 1000))
         destp <- as.data.frame(geosphere::destPoint(p, ab, dis))
 
         # where the trajectory is still in the same cell by tyr, it has terminated. Flag those trajectories by resetting the reminding time to 0 to get them out of the next iteration.
@@ -211,9 +250,11 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
         rest <- which(terra::cellFromXY(vel, p) != terra::cellFromXY(vel, destp)) # update rest
 
         if (length(rest) > 0) {
+
           d <- round((geosphere::distGeo(p[rest, ], destp[rest, ]) / 1000), 0)
           d[d == 0] <- 1
-          Trajxy <- splitLine(A = p[rest, ], B = destp[rest, ], n = d)
+
+          Trajxy <- splitLine(A = p[rest, ], B = destp[rest, ], nn = d)
 
           # now get a list with the cells for the points in each trajectory
           if (is.list(Trajxy)) {
@@ -238,8 +279,13 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
             oldxy[!is.na(velend), ][ind, ][rest, ] <- as.data.frame(t(mapply(function(X, Y) {
               X[Y - 1, ]
             }, X = Trajxy, Y = index)))
-          } else { # if all the trajectories have same number of points the output from gcIntermediate is a matrix instead of a list
-            Trajcells <- apply(Trajxy, 1, terra::cellFromXY, object = vel)
+
+          } else {  # if all the trajectories have same number of points the output from gc
+            # Intermediate is a matrix instead of a list
+
+            # Trajcells <- apply(Trajxy, 1, terra::cellFromXY, object = vel)
+            Trajcells <- apply(vel, 1, terra::cellFromXY, xy = Trajxy)
+
             newxy[!is.na(velend), ][ind, ][rest, ] <- data.frame(x = Trajxy[which(Trajcells != Trajcells[1])[1], 1], y = Trajxy[which(Trajcells != Trajcells[1])[1], 2])
             i <- i + 1
             llon[((i * nc) + 1):((i * nc) + nc)] <- lonlat[, 1] # necessary to not leave the other cells as NAs
@@ -262,8 +308,9 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
       }
     }
 
-    # Step 4. For those traj ending on land redirect the trajectories if possible
+    # Step 4. For those traj ending on land redirect the trajectories if possible -----
     if (sum(is.na(velend)) > 0) {
+
       land <- "Y" # to know if land was hit in the next loop when looking at bouncing trajectories
       onland <- which(is.na(velend)) # Identify which rows of velend are on land
 
@@ -273,29 +320,36 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
       }
 
       # For each cell that ends on land, look for a suitable target cell...
-      # Make list of candidate cell IDs: overlap between cells adjacent to "from" (fcells[is.na(sflags)][onland]) AND "to" (newcell[onland])cells
+      # Make list of candidate cell IDs: overlap between cells adjacent
+      # to "from" (fcells[is.na(sflags)][onland]) AND "to" (newcell[onland])cells
       # that are in the direction of movement (any other cells would mean "un-natural" movements).
       ccells <- suppressWarnings(mapply(function(X, Y) {
-        Z <- as.numeric(intersect(terra::adjacent(vel, X, directions = 8), terra::adjacent(vel, Y, directions = 8)))
+        Z <- as.numeric(terra::intersect(terra::adjacent(vel, X, directions = 8), terra::adjacent(vel, Y, directions = 8)))
         Z[!is.na(vel[Z])]
       }, X = oldcell[onland], Y = newcell[onland], SIMPLIFY = FALSE))
 
       # Now check if a suitable cell, other than the focal cell, is available along the line of movement
       # given departure direction. Diagonals included.
-      # First, calculate the velocity associated to each focal cell with which to move along the cell border given direction
-      # if transfer is vertical (upper/lower cell) use horizontal velocity component, else (horizontal) use vertical component
+      # First, calculate the velocity associated to each focal cell with which to
+      # move along the cell border given direction
+      # Then
+      # if transfer is vertical (upper/lower cell) use horizontal velocity component,
+      # if transfer is horizontal, use vertical component
       # negative values indicate E-W and N-S movements
+
       v <- mapply(function(X, Y) {
         ifelse(abs(X - Y) > 1, abs(vel[Y]) * sin(pi * ang[Y] / 180), abs(vel[Y]) * cos(pi * ang[Y] / 180))
       }, X = newcell[onland], Y = oldcell[onland])
+
       a <- rep(NA, length(v)) # to store angles for border movement
 
       for (k in 1:length(v)) {
         target <- newcell[onland][k]
         focal <- oldcell[onland][k]
-        if ((target - focal) > 1 & v[k] > 0) { # vertical transfer, horziontal movement
-          ccells[[k]] <- subset(ccells[[k]], ccells[[k]] %in% c(focal + 1, focal + ncol(vel) + 1))
-          a[k] <- 90
+
+        if ((target - focal) > 1 & v[k] > 0) { # vertical transfer, horizontal movement
+          ccells[[k]] <- subset(ccells[[k]], ccells[[k]] %in% c(focal + 1, focal + ncol(vel) + 1)) # JDE Focal cell + 1 and focal diagonal on next column (ncol + a)
+          a[k] <- 90 # Then set angle
         } else if ((target - focal) > 1 & v[k] < 0) {
           ccells[[k]] <- subset(ccells[[k]], ccells[[k]] %in% c(focal - 1, focal + ncol(vel) - 1))
           a[k] <- 270
@@ -320,31 +374,45 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
         }
       }
 
-      # Flag out the cells for which no suitable potential neighbours are available (all potential neighbours are NA; the trajectory has nowhere to go)
+      rm(k)
+
+      # Flag out the cells for which no suitable potential neighbours are available
+      # (all potential neighbours are NA; the trajectory has nowhere to go)
       empty <- as.logical(lapply(ccells, function(x) identical(x, numeric(0))))
       remaining[resto][onland][empty] <- 0
       lonlat[resto, ][onland, ][empty, ] <- oldxy[onland, ][empty, ]
 
       # if there are cells with available neighbours
       if (sum(!empty) > 0) {
+
         # select those cells
         leftcell <- ccells[!empty]
         focal <- oldcell[onland][!empty]
         target <- newcell[onland][!empty]
         nxy <- newxy[onland, ][!empty, ]
         oxy <- oldxy[onland, ][!empty, ]
-        vleft <- v[!empty]
+        vleft <- as.numeric(v[!empty])
         aleft <- a[!empty]
 
         # Check if there is an actual suitable neighbour
-        sst <- lapply(leftcell, function(x) mn[x]) # sst at focal and neighbouring cells
+        # sst at focal and neighbouring cells
+
+        sst <- lapply(leftcell, function(x) as.numeric(terra::extract(mn, x, raw = TRUE)))
 
         # if warming (cooling), need a suitable neighbour with cooler (warmer) local temperatures
         for (k in 1:length(leftcell)) {
-          leftcell[k] <- ifelse(vel[focal[k]] > 0 & sum(sst[[k]] < mn[focal[k]]) > 0, leftcell[[k]][which.min(sst[[k]])],
-            ifelse(vel[focal[k]] < 0 & sum(sst[[k]] > mn[focal[k]]) > 0, leftcell[[k]][which.max(sst[[k]])], NA)
-          )
-        }
+
+          # sst (list) is the sst from the mn climate layer for the adjoining cell
+          # focal is the focal cell number
+          # mn is the climate temp layer
+          # mn[focal[k]] is the temperature at the focal cell
+          # sst[[k]] is the sst in the adjoining cells
+          leftcell[k] <- ifelse(vel[focal[k]] > 0 & sum(sst[[k]] < mn[focal[k]]) > 0, # if
+                                leftcell[[k]][which.min(sst[[k]])], # do this
+                                ifelse(vel[focal[k]] < 0 & sum(sst[[k]] > mn[focal[k]]) > 0, # else
+                                       leftcell[[k]][which.max(sst[[k]])], # do this
+                                       NA)) # else
+        } # End finding a suitable cell
 
         # Flag cells for which no suitable neighbours are available (no suitable sst)
         remaining[resto][onland][!empty][is.na(as.numeric(leftcell))] <- 0
@@ -358,12 +426,17 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
           loncent <- data.frame(oldx = oldcent[, 1], NAx = dudcent[, 1], newx = newcent[, 1]) # An object containing the longitudes of the cells involved - needed for fixing dateline
 
           for (k in 1:nrow(loncent)) {
+
+            # Remove sign change for dateline, if needed
             if (abs(max(loncent[k, ]) - min(loncent[k, ])) > 180) {
               loncent[k, ][loncent[k, ] < 0] <- loncent[k, ][loncent[k, ] < 0] + 360
-            } # Remove sign change for dateline, if needed
+            }
+
+            # Figure out position of dividing longitude
             loncent$lonline[k] <- ifelse(abs(loncent[k, 2] - loncent[k, 3]) > abs(loncent[k, 2] - loncent[k, 1]), # if lon difference between NA cell and new cell is larger than NA to old cell
-              mean(c(loncent[k, 1], loncent[k, 3])), mean(c(loncent[k, 1], loncent[k, 2]))
-            ) # Figure out position of dividing longitude
+                                         mean(c(loncent[k, 1], loncent[k, 3])), mean(c(loncent[k, 1], loncent[k, 2]))
+            )
+
             loncent$lonline[k] <- loncent$lonline[k] - (360 * floor((loncent$lonline[k] + 180) / 360)) # Return to -180o to 180o format
             loncent$lonline[k] <- ifelse(loncent$lonline[k] == 180 && newcent[k, 1] < 0, -180, loncent$lonline[k])
             loncent$lonline[k] <- ifelse(loncent$lonline[k] == -180 && newcent[k, 1] > 0, 180, loncent$lonline[k]) # Arrange lonline to accommodate dateline
@@ -377,13 +450,14 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
           }
 
           loncent$oldcell <- focal[!is.na(as.numeric(leftcell))]
-          loncent$lonold <- oxy[!is.na(as.numeric(leftcell)), 1]
+          loncent$lonold <- oxy[!is.na(as.numeric(leftcell)), 1] # oxy <- old xy
           loncent$latold <- oxy[!is.na(as.numeric(leftcell)), 2]
           loncent$dis <- (geosphere::distGeo(oxy[!is.na(as.numeric(leftcell)), ], loncent[, 8:9]) / 1000) # distance from dold to new point
           loncent$dur <- loncent$dis / abs(vleft[!is.na(as.numeric(leftcell))]) # time taken to get there
           loncent$remaining <- remaining[resto][onland][!empty][!is.na(as.numeric(leftcell))] - loncent$dur
 
-          # where remaining is < 0, the trajectory terminates before reaching new destination. Flag those traj out and place them in the corresponding final coordinates.
+          # where remaining is < 0, the trajectory terminates before reaching new destination.
+          # Flag those traj out and place them in the corresponding final coordinates.
           if (sum(loncent$remaining < 0) > 0) {
             loncent[loncent$remaining < 0, 8:9] <- as.matrix(geosphere::destPoint(
               oxy[!is.na(as.numeric(leftcell)), ][loncent$remaining < 0, ], aleft[!is.na(as.numeric(leftcell))][loncent$remaining < 0],
@@ -404,17 +478,18 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
           remaining[resto][onland][!empty][!is.na(as.numeric(leftcell))] <- loncent$remaining
           rem[((i * nc) + 1):((i * nc) + nc)] <- remaining
           lonlat[resto, ][onland, ][!empty, ][!is.na(as.numeric(leftcell)), ] <- loncent[, 8:9]
+
         }
       }
-    }
+    } # End of Step 4. There should be no land cells after Step 4
 
-    # Step 5. Update register before moving to the next projection step
+    # Step 5. Update register before moving to the next projection step ----
     i <- i + 1 # increase the counter by 1
     llon[((i * nc) + 1):((i * nc) + nc)] <- lonlat[, 1] # Add final lon to the list
     llat[((i * nc) + 1):((i * nc) + nc)] <- lonlat[, 2] # Add final lat to the list
     rem[((i * nc) + 1):((i * nc) + nc)] <- remaining
 
-    # Step 6. Check for trajectories trapped in internal sinks and terminate them
+    # Step 6. Check for trajectories trapped in internal sinks and terminate them ----
     if (i >= 8) {
       cs <- which(remaining != 0)
       # index the trajectories trapped in a sink (those for which distance travelled over the last 4 iterations is less than 0.5 km)
@@ -425,14 +500,16 @@ voccTraj <- function(lonlat, vel, ang, mn, tyr, trajID = 1:nrow(lonlat), correct
           remaining[cs][ind] <- 0
         }
       }
-    }
-  }
+    } # End Step 6
+
+  } # End of while remaining
   close(pb)
+
 
   # prepare output
   trajIDs <- rep(trajID, (length(llon) / nc)) # rep(initialcells,(length(llon)/nc))
   traj <- stats::na.omit(data.frame(x = llon, y = llat, trajIDs = trajIDs))
-  # remove duplicated points (to keep track of the trajectorie's ID all trajectories are repeated over iterations even if they had terminated)
+  # remove duplicated points (to keep track of the trajectory's ID all trajectories are repeated over iterations even if they had terminated)
   traj <- traj[!duplicated(traj), ]
 
   return(traj)

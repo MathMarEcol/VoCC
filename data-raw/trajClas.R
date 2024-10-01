@@ -30,7 +30,7 @@
 #' @param NFT \code{numeric} the percentage of trajectories flowing through to be used as threshold in the classification.
 #' @param DateLine \code{logical} does the raster extent cross the international date line? (default "FALSE").
 #'
-#' @return A \code{raster.stack} containing the trajectory classification ("TrajClas"),
+#' @return A \code{SpatRaster} containing the trajectory classification ("TrajClas"),
 #' as well as those based on trajectory length ("ClassL"; 1 non-moving, 2 slow-moving, 3 fast-moving cells),
 #' boundrary ("BounS") and internal sinks ("IntS"), and the proportion of trajectories ending("PropEnd"),
 #' flowing through ("PropFT") and starting ("PropSt"). The trajectory classes ("TrajClas") are (1) non-moving,
@@ -100,11 +100,11 @@
 #'   xlab = NULL, ylab = NULL, scales = list(draw = FALSE)
 #' )
 trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL, Nend, Nst, NFT, DateLine = FALSE) {
+
   ang1 <- ang2 <- ang3 <- ang4 <- d1 <- d2 <- d3 <- d4 <- NULL # Fix devtools check warnings
   isink <- .SD <- .N <- cid <- coastal <- val <- NULL # Fix devtools check warnings
 
   TrajEnd <- TrajFT <- TrajSt <- IntS <- BounS <- TrajClas <- terra::rast(ang)
-  browser()
 
   # add cell ID to the data frame
   traj <- data.table::data.table(traj)

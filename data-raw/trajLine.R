@@ -68,11 +68,11 @@ trajLine <- function(x, projx = "EPSG::4326") {
     s <- which(abs(diff(coordinates(spl[[i]][, 1:2]))) > 180)
     if (length(s) > 0) {
       SPL <- split(as.data.frame(coordinates(spl[[i]][, 1:2])), cumsum(1:nrow(coordinates(spl[[i]][, 1:2])) %in% (s + 1)))
-      lns[[i]] <- Lines(lapply(SPL, function(x) Line(coordinates(x))), ID = i)
+      lns[[i]] <- sp::Lines(lapply(SPL, function(x) Line(coordinates(x))), ID = i)
     } else {
-      lns[[i]] <- Lines(list(Line(coordinates(spl[[i]][, 1:2]))), ID = i)
+      lns[[i]] <- sp::Lines(list(sp::Line(coordinates(spl[[i]][, 1:2]))), ID = i)
     }
   }
 
-  SpatialLinesDataFrame(SpatialLines(lns, proj4string = terra::crs(projx)), data = data.frame(trajIDs = unique(x$trajIDs)))
+  sp::SpatialLinesDataFrame(sp::SpatialLines(lns, proj4string = terra::crs(projx)), data = data.frame(trajIDs = unique(x$trajIDs)))
 }

@@ -113,7 +113,7 @@ spatGrad <- function(r, th = -Inf, projected = FALSE) {
   }
 
 
-  browser()
+ # browser()
   # Calulate NS and WE gradients. NOTE: for angles to work (at least using simple positive and negative values on Cartesian axes),
   # S-N & W-E gradients need to be positive.
   # JDE Notes: 1 in apply = operate over rows

@@ -75,7 +75,6 @@ r1[avocc1$focal] <- avocc1$vel
 terra::plot(r1)
 
 \dontrun{
-
 # Cell-specific, distance-unrestricted climate analogue velocity based on least-cost path distances
 # First, create the conductance matrix (all land cells considered to have conductance of 1)
 r <- JapTC

@@ -11,7 +11,7 @@ spatGrad(r, th = -Inf, projected = FALSE)
 Alternatively, a \code{raster} with the annual climatic values averaged
 over the period of interest.}
 
-\item{th}{\code{Integer} indicating a lower thershold to truncate the spatial
+\item{th}{\code{Integer} indicating a lower threshold to truncate the spatial
 gradient with. Use -Inf (default) if no threshold required.}
 
 \item{projected}{\code{Logical} is the source raster in a projected coordinate system?

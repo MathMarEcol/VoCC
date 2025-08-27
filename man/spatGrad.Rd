@@ -11,7 +11,7 @@ spatGrad(r, th = -Inf, projected = FALSE)
 Alternatively, a \code{raster} with the annual climatic values averaged
 over the period of interest.}
 
-\item{th}{\code{Integer} indicating a lower thershold to truncate the spatial
+\item{th}{\code{Integer} indicating a lower threshold to truncate the spatial
 gradient with. Use -Inf (default) if no threshold required.}
 
 \item{projected}{\code{Logical} is the source raster in a projected coordinate system?
@@ -28,7 +28,7 @@ associated to a climatic variable after Burrows et al. (2011). This trend is
 to be used for the calculation of the gradient-based climate velocity using gVoCC.
 }
 \examples{
-
+\dontrun{
 HSST <- VoCC_get_data("HSST.tif")
 
 yrSST <- sumSeries(HSST,
@@ -41,6 +41,7 @@ yrSST <- sumSeries(HSST,
 sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
 
 terra::plot(sg)
+}
 
 }
 \references{

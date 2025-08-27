@@ -21,7 +21,7 @@ Function to calculate the velocity of climate change after Burrows et al. (2011)
 based on local climatic temporal trends and spatial gradients.
 }
 \examples{
-
+\dontrun{
 HSST <- VoCC_get_data("HSST.tif")
 yrSST <- sumSeries(HSST,
   p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
@@ -34,6 +34,7 @@ sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
 
 v <- gVoCC(tr, sg)
 terra::plot(v)
+}
 
 }
 \references{

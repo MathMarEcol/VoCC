@@ -19,7 +19,7 @@
 #' @export
 #' @author Jorge Garcia Molinos and Christopher J. Brown
 #' @examples
-#'
+#' \dontrun{
 #' HSST <- VoCC_get_data("HSST.tif")
 #'
 #' yrSST <- sumSeries(HSST,
@@ -32,6 +32,7 @@
 #' tr <- tempTrend(yrSST, th = 10)
 #'
 #' terra::plot(tr)
+#' }
 tempTrend <- function(r, th) {
   y <- terra::values(r)
   ocean <- which(rowSums(is.na(y)) != ncol(y)) # remove land cells

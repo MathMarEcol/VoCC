@@ -26,7 +26,7 @@ and (iii) the location of remnant, novel and disappearing climates between both 
 Function to create a binned scatter plot of two climate variables.
 }
 \examples{
-
+\dontrun{
 JapTC <- VoCC_get_data("JapTC.tif")
 
 # Plot climate space for the two first variables(annual precipitation and maximum temperature)
@@ -41,7 +41,6 @@ out <- climPlot(xy,
   y.name = "Temperature max (°C)"
 )
 
-\dontrun{
 # output plots can be saved as:
 ggplot2::ggsave(
   plot = out, filename = file.path(getwd(), "example_plot.pdf"),

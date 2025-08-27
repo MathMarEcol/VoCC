@@ -28,6 +28,7 @@
 #' @export
 #' @author Jorge Garcia Molinos
 #' @examples
+#' \dontrun{
 #' # Monthly mean SST (HadISST) data for Europe Jan-1950 to Dec-2010
 #'
 #' HSST <- VoCC_get_data("HSST.tif")
@@ -65,6 +66,7 @@
 #'   p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
 #'   fun = myf, freqin = "months", freqout = "other"
 #' )
+#' }
 #'
 sumSeries <- function(r, p, yr0, l = terra::nlyr(r), fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years") {
   # construct xts object

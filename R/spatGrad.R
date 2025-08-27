@@ -26,7 +26,7 @@
 #' @export
 #' @author Jorge Garcia Molinos, David S. Schoeman, and Michael T. Burrows
 #' @examples
-#'
+#' \dontrun{
 #' HSST <- VoCC_get_data("HSST.tif")
 #'
 #' yrSST <- sumSeries(HSST,
@@ -39,6 +39,7 @@
 #' sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
 #'
 #' terra::plot(sg)
+#' }
 #'
 spatGrad <- function(r, th = -Inf, projected = FALSE) {
 

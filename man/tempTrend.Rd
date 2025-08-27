@@ -25,7 +25,7 @@ of a climatic variable. This trend is to be used for the calculation of the
 gradient-based climate velocity using gVoCC.
 }
 \examples{
-
+\dontrun{
 HSST <- VoCC_get_data("HSST.tif")
 
 yrSST <- sumSeries(HSST,
@@ -38,6 +38,7 @@ yrSST <- sumSeries(HSST,
 tr <- tempTrend(yrSST, th = 10)
 
 terra::plot(tr)
+}
 }
 \seealso{
 {\code{\link{spatGrad}}, \code{\link{gVoCC}}}

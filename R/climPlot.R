@@ -17,7 +17,7 @@
 #' @export
 #' @author Jorge Garcia Molinos and Naoki H. Kumagai
 #' @examples
-#'
+#' \dontrun{
 #' JapTC <- VoCC_get_data("JapTC.tif")
 #'
 #' # Plot climate space for the two first variables(annual precipitation and maximum temperature)
@@ -32,7 +32,6 @@
 #'   y.name = "Temperature max (°C)"
 #' )
 #'
-#' \dontrun{
 #' # output plots can be saved as:
 #' ggplot2::ggsave(
 #'   plot = out, filename = file.path(getwd(), "example_plot.pdf"),
@@ -44,6 +43,7 @@ climPlot <- function(xy, x.binSize, y.binSize, x.name = "V1", y.name = "V2") {
   yp <- xy[, 3]
   xf <- xy[, 2]
   yf <- xy[, 4]
+
   # bins per axis
   x.nbins <- floor((abs(range(xp, xf)[2] - range(xp, xf)[1])) / x.binSize)
   y.nbins <- floor((abs(range(yp, yf)[2] - range(yp, yf)[1])) / y.binSize)
@@ -102,7 +102,7 @@ climPlot <- function(xy, x.binSize, y.binSize, x.name = "V1", y.name = "V2") {
   Freq2D <- data.frame(x = x.bin, y = rep(y.bin, each = length(x.bin)), freq = Freq2D)
   Freq2D <- Freq2D[!is.na(Freq2D$freq), ]
 
-  panelAB <- ggplot2::ggplot(Freq2Dpf, ggplot2::aes(x = x, y = y, fill = freq)) +
+  panelAB <- ggplot2::ggplot(Freq2Dpf, ggplot2::aes(x = .data$x, y = .data$y, fill = freq)) +
     ggplot2::geom_raster() +
     ggplot2::scale_fill_gradientn(
       colors = r,
@@ -121,7 +121,7 @@ climPlot <- function(xy, x.binSize, y.binSize, x.name = "V1", y.name = "V2") {
       strip.text = ggplot2::element_blank()
     )
 
-  panelC <- ggplot2::ggplot(Freq2D, ggplot2::aes(x = x, y = y, fill = freq)) +
+  panelC <- ggplot2::ggplot(Freq2D, ggplot2::aes(x = .data$x, y = .data$y, fill = freq)) +
     ggplot2::geom_raster() +
     ggplot2::scale_fill_manual(values = c("#56B4E9", "#009E73", "#D55E00"), name = "Climate type") +
     ggplot2::labs(x = x.name, y = y.name)

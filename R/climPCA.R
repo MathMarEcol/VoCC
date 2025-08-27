@@ -22,7 +22,7 @@
 #' @export
 #' @author Jorge Garcia Molinos
 #' @examples
-#'
+#' \dontrun{
 #' JapTC <- VoCC_get_data("JapTC.tif")
 #'
 #' comp <- climPCA(JapTC[[c(1, 3, 5)]], JapTC[[c(2, 4, 6)]],
@@ -31,6 +31,8 @@
 #' # Create a data frame with the necessary variables in the required order (see climAna? for details)
 #' clim <- comp[[2]][, c(2, 4, 3, 5, 1)]
 #' clim[, c("x", "y")] <- terra::xyFromCell(JapTC[[1]], clim$cid)
+#' }
+#'
 climPCA <- function(climp, climf, trans = function(x) log(x), cen = TRUE, sc = TRUE, th = 0.8) {
   # get a data table with the pooled values (current/future) of the clim variables
   clim <- data.table::data.table(rbind(terra::values(climp), terra::values(climf)))

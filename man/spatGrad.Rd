@@ -28,7 +28,7 @@ associated to a climatic variable after Burrows et al. (2011). This trend is
 to be used for the calculation of the gradient-based climate velocity using gVoCC.
 }
 \examples{
-
+\dontrun{
 HSST <- VoCC_get_data("HSST.tif")
 
 yrSST <- sumSeries(HSST,
@@ -41,6 +41,7 @@ yrSST <- sumSeries(HSST,
 sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
 
 terra::plot(sg)
+}
 
 }
 \references{

@@ -33,10 +33,13 @@ Suggests:
     knitr,
     mapplots,
     ncdf4,
+    patchwork,
     rasterVis,
     repmis,
     rmarkdown,
-    scales
+    scales,
+    tidyterra,
+    VoCCdata
 URL: https://github.com/JorGarMol/VoCC
 BugReports: https://github.com/JorGarMol/VoCC/issues
 License: AGPL (>= 3)

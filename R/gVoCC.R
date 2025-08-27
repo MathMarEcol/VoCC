@@ -19,7 +19,7 @@
 #' @author Jorge Garcia Molinos
 #'
 #' @examples
-#'
+#' \dontrun{
 #' HSST <- VoCC_get_data("HSST.tif")
 #' yrSST <- sumSeries(HSST,
 #'   p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
@@ -32,6 +32,7 @@
 #'
 #' v <- gVoCC(tr, sg)
 #' terra::plot(v)
+#' }
 #'
 gVoCC <- function(tempTrend, spatGrad) {
   VoCC <- tempTrend[[1]] / spatGrad[[1]]

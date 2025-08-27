@@ -21,10 +21,12 @@
 #' @export
 #' @author Jorge Garcia Molinos and Michael T. Burrows
 #' @examples
+#' \dontrun{
 #' HSST <- VoCC_get_data("HSST.tif")
 #' Apr <- shiftTime(HSST, yr1 = 1960, yr2 = 2009, yr0 = 1955, th = 10, m = 4)
 #'
 #' terra::plot(Apr)
+#' }
 shiftTime <- function(r, yr1, yr2, yr0, th, m) {
   # 1. Long term trends in monthly values (e.g. deg/year if temperature)
   m1 <- ((yr1 - yr0) * 12) + m

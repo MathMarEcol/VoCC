@@ -18,6 +18,7 @@ vignette: >
 Sys.setenv("R_PARALLELLY_AVAILABLECORES_FALLBACK" = "1")
 ```
 
+**THIS IS A WORK IN PROGRESS TO CONVERT THE OLD RASTER-BASED VOCC PACKAGE TO TERRA. NOT EVERYTHING WORKS YET. IN PARTICULAR CONNECTIVITY IS NOT IMPLEMENTED SO ONLY EXAMPLE 1 BELOW WORKS.**
 
 This vignette provides the code to reproduce the examples for the R package VoCC as presented in Garcia Molinos et al. (2019). Refer to the paper and the function documentation for details on function options, considerations on the argument choices and interepretation of output.
 
@@ -25,7 +26,6 @@ For this tutorial we need the following packages (if not installed get them firs
 
 ```{r message=FALSE}
 library(VoCC)
-# devtools::load_all()
 library(terra)
 library(tidyterra)
 library(ggplot2)
@@ -133,8 +133,12 @@ marshift$DV <- terra::extract(abs(dv), terra::buffer(coords, buffer_size),
 ```{r}
 # fit the regression models
 Mgv <- lm(Shift^(1 / 4) ~ I((GV * 10)^(1 / 4)), data = marshift, weights = years_data)
-Mdv <- lm(Shift^(1 / 4) ~ I((DV * 10)^(1 / 4)), data = marshift, weights = years_data)
 summary(Mgv)
+```
+
+
+```{r}
+Mdv <- lm(Shift^(1 / 4) ~ I((DV * 10)^(1 / 4)), data = marshift, weights = years_data)
 summary(Mdv)
 ```
 
@@ -145,40 +149,45 @@ Produce the observed vs predicted scatterplots with regression lines (Fig. 2 in 
 
 p1 <- ggplot() + 
   geom_spatraster(data = gv[[1]]) + 
-  scale_fill_distiller(palette = "RdBu", direction = 1, limits = c(-50, 50)) +
+  scale_fill_distiller(palette = "RdBu", direction = -1, limits = c(-50, 50)) +
   ggtitle("Gradient-based vocc") +
   scale_x_continuous(expand = c(0,0)) + 
   scale_y_continuous(expand = c(0,0))
 
 p2 <- ggplot() + 
   geom_spatraster(data = gv[[1]]) + 
-  scale_fill_distiller(palette = "RdBu", direction = 1, limits = c(-20, 20)) +
+  scale_fill_distiller(palette = "RdBu", direction = -1, limits = c(-20, 20)) +
   ggtitle("Distance-based vocc") +
   scale_x_continuous(expand = c(0,0)) + 
   scale_y_continuous(expand = c(0,0))
 
 wrap_plots(p1, p2, ncol = 1)
 
+```
+
+```{r}
 # scatter plots with the resulting regression line
-p1 <- ggplot(na.omit(marshift), aes(x = I((GV * 10)^(1 / 4)), y = Shift^(1 / 4))) +
+p1 <- ggplot(na.omit(marshift), aes(x = (GV * 10)^(1 / 4), y = Shift^(1 / 4))) +
   geom_point(color = "grey") +
   geom_smooth(method = lm, se = FALSE) +
   theme_classic() +
   scale_color_brewer(palette = "Accent") +
   labs(x = "Predicted shift (x^1/4; km/yr)", y = "Observed shift (y^1/4; km/yr)")
-p2 <- ggplot(na.omit(marshift), aes(x = I((DV * 10)^(1 / 4)), y = Shift^(1 / 4))) +
+
+p2 <- ggplot(na.omit(marshift), aes(x = (DV * 10)^(1 / 4), y = Shift^(1 / 4))) +
   geom_point(color = "grey") +
   geom_smooth(method = lm, se = FALSE) +
   theme_classic() +
   scale_color_brewer(palette = "Accent") +
   labs(x = "Predicted shift (x^1/4; km/yr)", y = "Observed shift (y^1/4; km/yr)")
+
 wrap_plots(p1, p2, nrow = 1)
 ```
 
 # Example 2: Analysis of climate exposure and connectivity in the Western Pacific Ocean
 
 
-THIS CODE IS NOT OPERATIONAL YET. IN PARTICULAR, `voccTraj` HAS NOT BEEN UPDATED FOR `terra`. Standby for updates.
+**THIS CODE IS NOT OPERATIONAL YET. IN PARTICULAR, `voccTraj` HAS NOT BEEN UPDATED FOR `terra`. Standby for updates.**
 
 In this example we use climate velocity trajectories (based on 1960-2009 mean annual SST) to analyse climate connectivity in the Western Pacific region and calculate the residence time corresponding to the exclusive economic zones in the region as an index of climatic exposure. First, we arrange the raster layers for analysis.
 

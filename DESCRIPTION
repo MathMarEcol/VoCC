@@ -1,6 +1,6 @@
 Package: VoCC
 Title: The Velocity of Climate Change and related climatic metrics
-Version: 1.0.1
+Version: 0.0.1
 Authors@R: c(person("Jorge", "Garcia Molinos", email = "jorgegmolinos@arc.hokudai.ac.jp", role = c("aut", "cre")),
     person("David", "S. Schoeman", email = "", role = "aut"),
     person("Christopher", "J. Brown", email = "", role = "aut"),
@@ -29,13 +29,9 @@ Imports:
     terra,
     xts
 Suggests:
-    gridExtra,
     knitr,
-    mapplots,
     ncdf4,
     patchwork,
-    rasterVis,
-    repmis,
     rmarkdown,
     scales,
     tidyterra,

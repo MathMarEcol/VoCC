@@ -1,4 +1,9 @@
 url: ~
 template:
   bootstrap: 5
-
+  bslib:
+    toc: true
+    toc-expand: 3
+navbar:
+  structure:
+    right: [github, search]

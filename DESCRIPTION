@@ -36,8 +36,8 @@ Suggests:
     scales,
     tidyterra,
     VoCCdata
-URL: https://github.com/JorGarMol/VoCC
-BugReports: https://github.com/JorGarMol/VoCC/issues
+URL: https://mathmarecol.github.io/VoCC/
+BugReports: https://github.com/MathMarEcol/VoCC/issues
 License: AGPL (>= 3)
 Encoding: UTF-8
 LazyData: true

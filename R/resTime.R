@@ -2,7 +2,7 @@
 #'
 #' Function to calculate VoCC-based residence time of isotherms within a polygon after Loaire et al. (2009)
 #'
-#' @param pg \code{SpatialPolygon} or a \code{SpatialPolygonsDataFrame} containing the polygons for which
+#' @param pg \code{sf} object or \code{terra::vect} object containing the polygons for which
 #' the residence time is to be calculated. The polygons must be on the same coordinate system as vel.
 #' @param vel \code{raster} with climate velocity (km/year) for the period of interest.
 #' @param areapg \code{vector} with the area (in km2) of the polygons. Use NA (default) to calculate internally if field not avilable.
@@ -44,26 +44,59 @@
 #' # Using a user defined polygon
 #' x_coord <- c(-28, -20, -20.3, -25.5)
 #' y_coord <- c(60, 61, 63, 62)
-#' p <- Polygon(cbind(x_coord, y_coord))
-#' sps <- SpatialPolygons(list(Polygons(list(p), 1)))
-#' a3 <- resTime(sps, vel, areapg = NA)
+#' coords <- matrix(c(x_coord, y_coord), ncol = 2)
+#' poly_sf <- sf::st_sf(geometry = sf::st_sfc(sf::st_polygon(list(coords))))
+#' a3 <- resTime(poly_sf, vel, areapg = NA)
 #'
 #' terra::plot(vel)
-#' terra::plot(EEZ, add = TRUE)
-#' terra::plot(sps, add = TRUE)
+#' plot(sf::st_geometry(EEZ), add = TRUE)
+#' plot(sf::st_geometry(poly_sf), add = TRUE)
 #' }
 resTime <- function(pg, vel, areapg = NA) {
+
   resTim <- v <- d <- NULL # Fix devtools check warnings
 
-  RT <- suppressWarnings(
-    data.table::data.table(ID = sp::getSpPPolygonsIDSlots(pg)) # TODO Is this just accessing the actual polygons?
-  )
+  # Handle both sf and terra::vect objects
+  if (inherits(pg, "sf")) {
+    pg_vect <- terra::vect(pg)
+    n_features <- nrow(pg)
+  } else if (inherits(pg, "SpatVector")) {
+    pg_vect <- pg
+    n_features <- nrow(pg)
+  } else {
+    stop("pg must be an sf object or a terra::vect (SpatVector) object")
+  }
 
-  RT[, v := terra::extract(vel, pg, fun = mean, na.rm = TRUE)]
+  # Create ID sequence based on number of features
+  RT <- data.table::data.table(ID = seq_len(n_features))
+
+  # Extract velocity values using terra::vect for efficiency
+  extracted_values <- terra::extract(vel, pg_vect, fun = mean, na.rm = TRUE)
+  
+  # Handle case where extraction returns NULL or empty results
+  if (is.null(extracted_values) || nrow(extracted_values) == 0) {
+    stop("No values could be extracted from the raster. Check that polygons overlap with the raster and have the same coordinate system.")
+  }
+  
+  # Extract the mean values, handling potential column name variations
+  if ("mean" %in% names(extracted_values)) {
+    RT[, v := extracted_values$mean]
+  } else if (ncol(extracted_values) >= 2) {
+    # If no 'mean' column, use the second column (first is usually ID)
+    RT[, v := extracted_values[[2]]]
+  } else {
+    stop("Unexpected format from terra::extract(). Please check your input data.")
+  }
 
   # If not provided, calculate the area of the polygon
   if (all(is.na(areapg))) {
-    areapg <- geosphere::areaPolygon(pg) / 1000000 # area polygon in km2 #TODO I think we can do this internally, potentially with terra, without an extra package
+    if (inherits(pg, "sf")) {
+      # Calculate area in km2 using sf::st_area
+      areapg <- as.numeric(sf::st_area(pg)) / 1000000 # Convert from m2 to km2
+    } else {
+      # Calculate area in km2 using terra::expanse
+      areapg <- terra::expanse(pg_vect, unit = "km")
+    }
   }
 
   RT[, d := 2 * sqrt((areapg / pi))]

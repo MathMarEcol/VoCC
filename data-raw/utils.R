@@ -6,11 +6,11 @@
 #' @export
 #'
 #' @examples
-#'
+#' \dontrun{
 #' VoCC_get_data()
 #'
 #' HSST <- VoCC_get_data(path = "HSST.tif")
-#'
+#' }
 VoCC_get_data <- function(path = NULL) {
   if (is.null(path)) {
     dir(system.file("extdata", package = "VoCC"))

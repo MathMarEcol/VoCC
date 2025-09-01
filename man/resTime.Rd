@@ -7,7 +7,7 @@
 resTime(pg, vel, areapg = NA)
 }
 \arguments{
-\item{pg}{\code{SpatialPolygon} or a \code{SpatialPolygonsDataFrame} containing the polygons for which
+\item{pg}{\code{sf} object or \code{terra::vect} object containing the polygons for which
 the residence time is to be calculated. The polygons must be on the same coordinate system as vel.}
 
 \item{vel}{\code{raster} with climate velocity (km/year) for the period of interest.}
@@ -49,13 +49,13 @@ a2
 # Using a user defined polygon
 x_coord <- c(-28, -20, -20.3, -25.5)
 y_coord <- c(60, 61, 63, 62)
-p <- Polygon(cbind(x_coord, y_coord))
-sps <- SpatialPolygons(list(Polygons(list(p), 1)))
-a3 <- resTime(sps, vel, areapg = NA)
+coords <- matrix(c(x_coord, y_coord), ncol = 2)
+poly_sf <- sf::st_sf(geometry = sf::st_sfc(sf::st_polygon(list(coords))))
+a3 <- resTime(poly_sf, vel, areapg = NA)
 
 terra::plot(vel)
-terra::plot(EEZ, add = TRUE)
-terra::plot(sps, add = TRUE)
+plot(sf::st_geometry(EEZ), add = TRUE)
+plot(sf::st_geometry(poly_sf), add = TRUE)
 }
 }
 \references{

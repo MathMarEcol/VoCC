@@ -10,28 +10,33 @@ Description: Functions to calculate the velocity of climate change (VoCC) and re
     both gradient-based (Burrows et al. 2011, Burrows et al. 2014), and distance-based (Hamann et a. 2013,
      Garcia Molinos et al. 2017) approaches.
 Depends: R (>= 3.5)
-Imports: 
+Imports:
     assertthat,
     CircStats,
     cowplot,
     data.table,
     doParallel,
+    dplyr,
     foreach,
-    gdistance,
     geosphere,
-    ggplot2,
     magrittr,
     parallelly,
     RColorBrewer,
     rlang,
-    sp,
+    sf,
     stats,
     terra,
+    tibble,
+    tidyr,
+    tidyselect,
     xts
 Suggests:
+    ggplot2,
     knitr,
+    mapplots,
     ncdf4,
     patchwork,
+    purrr,
     rmarkdown,
     scales,
     tidyterra,

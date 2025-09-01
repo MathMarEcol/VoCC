@@ -71,7 +71,7 @@ avocc1 <- dVoCC(clim,
   geoTol = 160, distfun = "GreatCircle", trans = NA, lonlat = TRUE
 )
 
-r1 <- JapTC
+r1 <- JapTC[[1]]
 r1[avocc1$focal] <- avocc1$vel
 terra::plot(r1)
 

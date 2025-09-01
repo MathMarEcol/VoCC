@@ -25,8 +25,7 @@ This vignette provides the code to reproduce the examples for the R package VoCC
 For this tutorial we need the following packages (if not installed get them first):
 
 ```{r message=FALSE}
-# library(VoCC)
-devtools::load_all()
+library(VoCC)
 library(dplyr)
 library(tidyr)
 library(data.table)
@@ -87,12 +86,15 @@ Next, we extract the mean velocity estimates for each reported shift by taking t
 
 ```{r}
 # Change sign as needed and create the distance-based velocity raster
-ind <- which(r2[[1]][v$focal] > r2[[2]][v$target])
+# Change sign as needed - terra approach for value comparison
+focal_vals <- terra::values(r2[[1]])[v$focal]
+target_vals <- terra::values(r2[[2]])[v$target]
+ind <- which(focal_vals > target_vals)
 v$velBis <- v$vel
 v$velBis[ind] <- v$vel[ind] * -1
 
-# put output in raster format
-dv <- terra::rast(gv)
+# put output in raster format - create single layer empty template like raster(gv)
+dv <- terra::rast(terra::ext(gv), resolution = terra::res(gv), crs = terra::crs(gv))
 dv[v$focal] <- v$velBis
 
 # Create point geometries and buffer them
@@ -100,15 +102,19 @@ coords <- terra::vect(cbind(marshift$long, marshift$lat), crs = "EPSG:4326")
 buffer_size <- marshift$Shift * (marshift$timespan / 10) * 1000
 
 # Get the mean velocity within the buffer for each data point.
-marshift$GV <- terra::extract(abs(gv), terra::buffer(coords, buffer_size), 
-                              fun = mean, na.rm = TRUE)$voccMag # TODO The other option is voccAng but they seem the same. Check data above.
+# Match old raster::extract approach exactly
+marshift$GV <- terra::extract(abs(gv[[1]]), coords,
+                              buffer = buffer_size,
+                              fun = mean, na.rm = TRUE,
+                              weights = TRUE, exact = FALSE)[,2]
 
-marshift$DV <- terra::extract(abs(dv), terra::buffer(coords, buffer_size), 
-                              fun = mean, na.rm = TRUE)$voccMag  # The other option is voccAng
+marshift$DV <- terra::extract(abs(dv), coords,
+                              buffer = buffer_size,
+                              fun = mean, na.rm = TRUE,
+                              weights = TRUE, exact = FALSE)[,2]
 ```
 
 ```{r}
-# retrieve the closest marine cell for those centroids falling on land
 # For points that didn't get values (NA), find nearest valid cells
 
 missing_points <- coords[is.na(marshift$GV)] # Identify NAs
@@ -119,7 +125,6 @@ if(!is.empty(missing_points)){
   marshift$GV[is.na(marshift$GV)] <- nearest_values[, 2] # Replace the NA values in `marshift$GV`
 }
 
-
 missing_points <- coords[is.na(marshift$DV)] # Identify NAs
 if(!is.empty(missing_points)){
   marine_cells <- terra::as.points(dv[[1]]) # vector of all valid marine cell locations.
@@ -127,7 +132,7 @@ if(!is.empty(missing_points)){
   nearest_values <- terra::extract(dv[[1]], nearest_cells) # get the values from the nearest marine cells.
   marshift$DV[is.na(marshift$DV)] <- nearest_values[, 2] # Replace the NA values in `marshift$GV`
 }
-
+  
 ```
 
 ```{r}
@@ -155,7 +160,7 @@ p1 <- ggplot() +
   scale_y_continuous(expand = c(0,0))
 
 p2 <- ggplot() + 
-  geom_spatraster(data = gv[[1]]) + 
+  geom_spatraster(data = dv[[1]]) + 
   scale_fill_distiller(palette = "RdBu", direction = -1, limits = c(-20, 20)) +
   ggtitle("Distance-based vocc") +
   scale_x_continuous(expand = c(0,0)) + 

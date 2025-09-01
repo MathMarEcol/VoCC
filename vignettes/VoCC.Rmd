@@ -2,23 +2,23 @@
 title: "VoCC"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{VoCC}
+%\VignetteIndexEntry{VoCC}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteIndexEntry{VoCC}
   \usepackage[utf8]{inputenc}
----
+  ---
   
 ```{r setup, include = FALSE}
   knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>"
+collapse = TRUE,
+comment = "#>"
 )
 
 # Force sequential processing to avoid parallel processing issues during package checking
 Sys.setenv("R_PARALLELLY_AVAILABLECORES_FALLBACK" = "1")
 ```
 
-**THIS IS A WORK IN PROGRESS TO CONVERT THE OLD RASTER-BASED VOCC PACKAGE TO TERRA. NOT EVERYTHING WORKS YET. IN PARTICULAR CONNECTIVITY IS NOT IMPLEMENTED SO ONLY EXAMPLE 1 BELOW WORKS.**
+**THIS IS A WORK IN PROGRESS TO CONVERT THE OLD RASTER-BASED VOCC PACKAGE TO TERRA. NOT EVERYTHING WORKS YET.**
 
 This vignette provides the code to reproduce the examples for the R package VoCC as presented in Garcia Molinos et al. (2019). Refer to the paper and the function documentation for details on function options, considerations on the argument choices and interepretation of output.
 
@@ -26,10 +26,17 @@ For this tutorial we need the following packages (if not installed get them firs
 
 ```{r message=FALSE}
 library(VoCC)
+library(dplyr)
+library(tidyr)
+library(data.table)
 library(terra)
-library(tidyterra)
+library(purrr)
+
+# For Plotting
 library(ggplot2)
+library(tidyterra)
 library(patchwork)
+library(mapplots)
 ```
 
 We also need a few data sets that can be accessed from the `VoCCdata` package.
@@ -57,12 +64,10 @@ r <- sumSeries(HadiSST, p = "1960-01/2009-12", yr0 = "1955-01-01",
                l = terra::nlyr(HadiSST), 
                fun = function(x) colMeans(x, na.rm = TRUE), 
                freqin = "months", freqout = "years")
-# temporal trend
-vt <- tempTrend(r, th = 10)
-# spatial gradient
-vg <- spatGrad(r, th = 0.0001, projected = FALSE)
-# climate velocity
-gv <- gVoCC(vt, vg)
+
+vt <- tempTrend(r, th = 10) # temporal trend
+vg <- spatGrad(r, th = 0.0001, projected = FALSE) # spatial gradient
+gv <- gVoCC(vt, vg) # climate velocity
 
 # Now the distance-based velocities
 # Take 1960-1970 as base period against 2000-2009
@@ -72,8 +77,8 @@ r2 <- c(terra::mean(r[[1:10]], na.rm = TRUE), terra::mean(r[[41:50]], na.rm = TR
 clim <- na.omit(data.frame(terra::values(r2), cid = 1:terra::ncell(r)))
 
 clim[, c("x", "y")] <- terra::xyFromCell(r, clim$cid)
-# 1965-2004 (40 yr), 500 km search radius
 
+# 1965-2004 (40 yr), 500 km search radius
 v <- dVoCC(clim, n = 1, tdiff = 40, method = "Single", climTol = 0.1, geoTol = 500, distfun = "GreatCircle", trans = NA, lonlat = TRUE)
 ```
 
@@ -81,53 +86,53 @@ Next, we extract the mean velocity estimates for each reported shift by taking t
 
 ```{r}
 # Change sign as needed and create the distance-based velocity raster
-ind <- which(terra::extract(r2[[1]], v$focal) > terra::extract(r2[[2]], v$target))
+# Change sign as needed - terra approach for value comparison
+focal_vals <- terra::values(r2[[1]])[v$focal]
+target_vals <- terra::values(r2[[2]])[v$target]
+ind <- which(focal_vals > target_vals)
 v$velBis <- v$vel
 v$velBis[ind] <- v$vel[ind] * -1
-# put output in raster format
-dv <- terra::rast(gv)
+
+# put output in raster format - create single layer empty template like raster(gv)
+dv <- terra::rast(terra::ext(gv), resolution = terra::res(gv), crs = terra::crs(gv))
 dv[v$focal] <- v$velBis
 
 # Create point geometries and buffer them
 coords <- terra::vect(cbind(marshift$long, marshift$lat), crs = "EPSG:4326")
 buffer_size <- marshift$Shift * (marshift$timespan / 10) * 1000
 
-marshift$GV <- terra::extract(abs(gv[[1]]), terra::buffer(coords, buffer_size), 
-                              fun = mean, na.rm = TRUE)$voccMag # TODO The other option is voccAng but they seem the same. Check data above.
+# Get the mean velocity within the buffer for each data point.
+# Match old raster::extract approach exactly
+marshift$GV <- terra::extract(abs(gv[[1]]), coords,
+                              buffer = buffer_size,
+                              fun = mean, na.rm = TRUE,
+                              weights = TRUE, exact = FALSE)[,2]
 
-marshift$DV <- terra::extract(abs(dv), terra::buffer(coords, buffer_size), 
-                              fun = mean, na.rm = TRUE)$voccMag  # The other option is voccAng
+marshift$DV <- terra::extract(abs(dv), coords,
+                              buffer = buffer_size,
+                              fun = mean, na.rm = TRUE,
+                              weights = TRUE, exact = FALSE)[,2]
 ```
 
-```{r include=FALSE}
-# # retrieve the closest marine cell for those centroids falling on land
-# # For points that didn't get values (NA), find nearest valid cells
-# na_gv <- is.na(marshift$GV)
-# na_dv <- is.na(marshift$DV)
-# 
-# if(any(na_gv)) {
-#   # Create a mask of valid cells and find nearest valid cell for each NA point
-#   valid_cells_gv <- !is.na(gv[[1]])
-#   for(i in which(na_gv)) {
-#     distances <- terra::distance(coords[i], gv[[1]], unit = "m")
-#     # Find the closest non-NA cell
-#     valid_distances <- terra::mask(distances, valid_cells_gv)
-#     min_cell <- which.min(terra::values(valid_distances))
-#     marshift$GV[i] <- terra::values(gv[[1]])[min_cell]
-#   }
-# }
-# 
-# if(any(na_dv)) {
-#   # Create a mask of valid cells and find nearest valid cell for each NA point  
-#   valid_cells_dv <- !is.na(dv)
-#   for(i in which(na_dv)) {
-#     distances <- terra::distance(coords[i], dv, unit = "m")
-#     # Find the closest non-NA cell
-#     valid_distances <- terra::mask(distances, valid_cells_dv)
-#     min_cell <- which.min(terra::values(valid_distances))
-#     marshift$DV[i] <- terra::values(dv)[min_cell]
-#   }
-# }
+```{r}
+# For points that didn't get values (NA), find nearest valid cells
+
+missing_points <- coords[is.na(marshift$GV)] # Identify NAs
+if(!is.empty(missing_points)){
+  marine_cells <- terra::as.points(gv[[1]]) # vector of all valid marine cell locations.
+  nearest_indices <- terra::nearest(missing_points, marine_cells) # Find the nearest marine cell
+  nearest_values <- terra::extract(gv[[1]], marine_cells[nearest_indices]) # get the values from the nearest marine cells.
+  marshift$GV[is.na(marshift$GV)] <- nearest_values[, 2] # Replace the NA values in `marshift$GV`
+}
+
+missing_points <- coords[is.na(marshift$DV)] # Identify NAs
+if(!is.empty(missing_points)){
+  marine_cells <- terra::as.points(dv[[1]]) # vector of all valid marine cell locations.
+  nearest_cells <- terra::nearest(missing_points, marine_cells) # Find the nearest marine cell
+  nearest_values <- terra::extract(dv[[1]], nearest_cells) # get the values from the nearest marine cells.
+  marshift$DV[is.na(marshift$DV)] <- nearest_values[, 2] # Replace the NA values in `marshift$GV`
+}
+  
 ```
 
 ```{r}
@@ -155,7 +160,7 @@ p1 <- ggplot() +
   scale_y_continuous(expand = c(0,0))
 
 p2 <- ggplot() + 
-  geom_spatraster(data = gv[[1]]) + 
+  geom_spatraster(data = dv[[1]]) + 
   scale_fill_distiller(palette = "RdBu", direction = -1, limits = c(-20, 20)) +
   ggtitle("Distance-based vocc") +
   scale_x_continuous(expand = c(0,0)) + 
@@ -186,9 +191,6 @@ wrap_plots(p1, p2, nrow = 1)
 
 # Example 2: Analysis of climate exposure and connectivity in the Western Pacific Ocean
 
-
-**THIS CODE IS NOT OPERATIONAL YET. IN PARTICULAR, `voccTraj` HAS NOT BEEN UPDATED FOR `terra`. Standby for updates.**
-
 In this example we use climate velocity trajectories (based on 1960-2009 mean annual SST) to analyse climate connectivity in the Western Pacific region and calculate the residence time corresponding to the exclusive economic zones in the region as an index of climatic exposure. First, we arrange the raster layers for analysis.
 
 ```{r}
@@ -214,75 +216,84 @@ lonlat <- data.frame(terra::xyFromCell(velc, 1:ncell(velc)))
 lonlat$vel <- terra::extract(vel, lonlat, ID = FALSE)
 lonlat$ang <- terra::extract(ang, lonlat[, 1:2], ID = FALSE)
 lonlat$mn <- terra::extract(mn, lonlat[, 1:2], ID = FALSE)
-lonlat <- na.omit(lonlat)
+lonlat$lineID <- 1:nrow(lonlat)
+lonlat <- drop_na(lonlat)
 ```
 
 Let's calculate the trajectories with parallel processing to demonstrate how this can be used to speed things up (especially useful when dealing with fine resolutions or large extents).
 
-```{r, eval=FALSE}
-cores <- detectCores()
-ncores <- cores[1] - 1
-cuts <- cut(1:nrow(lonlat), ncores)
-cl <- makeCluster(ncores)
-registerDoParallel(cl)
-traj <- foreach(x = levels(cuts), .combine = rbind, .packages = c("raster", "sp", "rgeos", "geosphere", "rgdal", "VoCC"), .multicombine = TRUE) %dopar% {
-  voccTraj(lonlat[cuts == x, ], vel, ang, mn, tyr = 50, trajID = as.numeric(rownames(lonlat[cuts == x, ])), correct = FALSE)
-}
-stopCluster(cl)
+```{r}
+traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, tstep = 1/12)
+
+# THIS IS EXTREMELY SLOW.....
+# system.time({
+#   traj <- map(lonlat %>% group_split(lineID), 
+#               ~ voccTraj(lonlat = .x, vel, ang, mn, tyr = 50, tstep = 1/12))
+# })
+
 ```
 
 Plot them over the climate velocities and the EEZ polygons from the EEZs data set (Fig. 3a in Garcia Molinos et al. 2019)
 
-```{r, eval=FALSE}
+```{r}
+EEZs <- sf::st_read(system.file("extdata", "EEZs.gpkg", package = "VoCCdata"))
+
 # simplify polygons to speed plotting up
-eez_simp <- rgeos::gSimplify(EEZs, tol = 0.5, topologyPreserve = TRUE)
-plot(velc)
+eez_simp <- sf::st_simplify(EEZs, preserveTopology = TRUE, dTolerance = 0.5)
+
+
 # create the spatial object with the trajectories and plot them together with the EEZ polygons
-lns <- trajLine(x = traj)
-plot(lns, add = TRUE)
-plot(eez_simp, col = scales::alpha(rgb(211, 211, 211, maxColorValue = 255), 0.5), add = TRUE)
+lns <- map(traj %>% group_split(cellIDs), trajLine) %>% 
+  purrr::list_rbind() %>% 
+  sf::st_sf()
+
+ggplot(data = lns) + geom_sf(aes(colour = cellID))
+
+
 ```
 
-We now calulcate the trajectory classes and residence times for each EEZ using the traj25 data set. 
+We now calculate the trajectory classes and residence times for each EEZ using the traj25 data set. 
 
-```{r, eval=FALSE}
-# get the set of starting cells for the trajectories and calculate trajectories
-# at 1/4-deg resolution (16 trajectories per 1-deg cell)
-r <- disaggregate(mn, 4)
-lonlat <- na.omit(data.frame(terra::xyFromCell(vel, 1:ncell(vel)), vel[], ang[], mn[]))[, 1:2]
-traj25 <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
+```{r eval=TRUE}
 # classify trajectories (16 trajectories starting from each 1-deg cell cell)
 clas <- trajClas(traj25, vel, ang, mn, trajSt = 16, tyr = 50, nmL = 20, smL = 100, Nend = 45, Nst = 15, NFT = 70)
+
 # Extract proportions by categories for each EEZ
 v <- data.table(terra::extract(clas[[7]], EEZs, df = TRUE))
 v[, TrajClas := as.character(TrajClas)]
 v[, ID := as.ordered(ID)]
+
 # proportions by class
 d <- prop.table(table(v), 1)
+
 # residence times by EEZ
 EEZa <- resTime(EEZs, vel, areapg = NA)
 ```
 
 Finally let's plot the category proportions as pie charts on top of each EEZ, the size of the chart being proportional to their respective residence time (Fig. 3b in Garcia Molinos et al. 2019).
 
-```{r, eval=FALSE}
+```{r eval=FALSE}
 D <- data.table(d) # put data in long format
-# add EEZ names for reference
-D[, name := as.character(EEZs$Territory1)[as.numeric(ID)]]
+
+D[, name := as.character(EEZs$Territory1)[as.numeric(ID)]] # add EEZ names for reference
 D[, RT := as.character(EEZa$resTim)[as.numeric(ID)]]
+
 # prepare data frame to plot the pie charts with
 dt <- as.data.frame.matrix(d)
 dt$country <- as.character(EEZs$Territory1)
-dt[, c("x", "y")] <- coordinates(EEZs)
+
+coords <- sf::st_coordinates(sf::st_centroid(EEZs))
+dt[, c("x", "y")] <- coords[, c("X", "Y")]
 dt$RT <- EEZa$resTim
-# generate the plot
+
+# # generate the plot
 plot(velc)
 plot(eez_simp, add = TRUE)
 mycol <- c(scales::alpha(rgb(192, 192, 192, maxColorValue = 255), 0.5), scales::alpha(rgb(204, 255, 204, maxColorValue = 255), 0.5), scales::alpha(rgb(255, 153, 51, maxColorValue = 255), 0.5), scales::alpha(rgb(255, 51, 51, maxColorValue = 255), 0.5), scales::alpha(rgb(51, 51, 255, maxColorValue = 255), 0.5), scales::alpha(rgb(204, 102, 0, maxColorValue = 255), 0.5), scales::alpha(rgb(204, 0, 204, maxColorValue = 255), 0.5), scales::alpha(rgb(255, 255, 51, maxColorValue = 255), 0.5), scales::alpha(rgb(153, 204, 255, maxColorValue = 255), 0.5))
 # mylab = c("Non-moving", "Slow-moving", "Internal Sink", "Boundary sink",
 #         "Source", "Internal sink","Corridor", "Divergence", "Convergence")
 for (i in 1:35) {
-  add.pie(z = as.numeric(dt[i, 1:9]), x = dt[i, "x"], y = dt[i, "y"], radius = log(dt[i, "RT"]), col = mycol, labels = "")
+  add.pie(z = as.numeric(dt[i, 1:5]), x = dt[i, "x"], y = dt[i, "y"], radius = log(dt[i, "RT"]), col = mycol, labels = "")
 }
 ```
 

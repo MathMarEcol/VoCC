@@ -27,7 +27,7 @@ These columns are not required if using the "Single" method. The last three colu
 
 \item{tdiff}{\code{integer} defining the number of years (or other temporal unit) between periods.}
 
-\item{method}{\code{ch)aracter string} specifying the analogue method to be used. 'Single': a constant, single analogue threshold
+\item{method}{\code{character string} specifying the analogue method to be used. 'Single': a constant, single analogue threshold
 for each climate variable is applied to all cells (Ohlemuller et al. 2006, Hamann et al. 2015); climate analogy corresponds to target cells
 with values below the specified threshold for each climatic variable. 'Variable': a cell-specific climate threshold is used for each climatic variable
 to determine the climate analogues associated with each cell by reference to its baseline climatic variability (Garcia Molinos et al. 2017).}
@@ -71,13 +71,13 @@ avocc1 <- dVoCC(clim,
   geoTol = 160, distfun = "GreatCircle", trans = NA, lonlat = TRUE
 )
 
-r1 <- JapTC
+r1 <- JapTC[[1]]
 r1[avocc1$focal] <- avocc1$vel
 terra::plot(r1)
 
 # Cell-specific, distance-unrestricted climate analogue velocity based on least-cost path distances
 # First, create the conductance matrix (all land cells considered to have conductance of 1)
-r <- JapTC
+r <- JapTC[[1]]
 r[!is.na(JapTC[[1]])] <- 1
 h8 <- gdistance::transition(r, transitionFunction = mean, directions = 8)
 h8 <- gdistance::geoCorrection(h8, type = "c")
@@ -89,7 +89,7 @@ avocc2 <- dVoCC(clim,
 )
 
 # Plot results
-r1 <- r2 <- JapTC
+r1 <- r2 <- JapTC[[1]]
 r1[avocc1$focal] <- avocc1$vel
 r2[avocc2$focal] <- avocc2$vel
 terra::plot(c(r1, r2))

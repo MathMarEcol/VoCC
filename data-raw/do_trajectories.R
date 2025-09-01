@@ -23,8 +23,9 @@ do_trajectories <- function(raster_stack, start_points, nyears) {
            i_coast = terra::extract(fine_coast, .[,1:2], ID = FALSE) %>%
              pull(tos),
            to_drop = ifelse(is.na(vel) & is.na(i_coast), NA, 1)) %>%
-    drop_na(to_drop) %>%
+    tidyr::drop_na(to_drop) %>%
     dplyr::select(x, y, ID)
+
   out <- traject(lonlat,
                  vel = vel, ang = ang, mn = mn,
                  vel_c = vel_c, ang_c = ang_c, mn_c = mn_c,

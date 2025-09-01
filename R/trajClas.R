@@ -16,9 +16,9 @@
 #'
 #' @param traj \code{data.frame} as retuned by voccTraj containing the coordinates
 #' and identification number for each trajectory.
-#' @param vel \code{raster} with the magnitude of gradient-based climate velocity.
-#' @param ang \code{raster} with velocity angles.
-#' @param mn \code{raster} with mean climatic values for the study period.
+#' @param vel \code{SpatRaster} with the magnitude of gradient-based climate velocity.
+#' @param ang \code{SpatRaster} with velocity angles.
+#' @param mn \code{SpatRaster} with mean climatic values for the study period.
 #' @param trajSt \code{integer} number of trajectories starting from each cell or spatial unit.
 #' @param tyr \code{integer} number of years comprising the projected period.
 #' @param nmL \code{numeric} upper threshold (distance units as per vel object) up to which
@@ -44,7 +44,7 @@
 #' @export
 #' @author Jorge Garcia Molinos
 #' @examples
-#'
+#' \dontrun{
 #' HSST <- VoCC_get_data("HSST.tif")
 #'
 #' # input raster layers
@@ -67,7 +67,7 @@
 #' angd <- terra::disagg(ang, 4)
 #' lonlat <- stats::na.omit(data.frame(
 #'   terra::xyFromCell(veld, 1:terra::ncell(veld)),
-#'   veld[], angd[], mnd[]
+#'   terra::values(veld), terra::values(angd), terra::values(mnd)
 #' ))[, 1:2]
 #'
 #' traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
@@ -84,25 +84,27 @@
 #'   "magenta1", "cadetblue1", "yellow1"
 #' )
 #' # Keep only the categories present in our raster
-#' my_col <- my_col[sort(unique(clas[[7]][]))]
+#' my_col <- my_col[sort(unique(terra::values(clas[[7]])))]
 #'
 #' # Classify raster / build attribute table
-#' clasr <- ratify(clas[[7]])
-#' rat_r <- levels(clasr)[[1]]
-#' rat_r$trajcat <- c(
-#'   "N-M", "S-M", "IS", "BS", "Srce",
-#'   "RS", "Cor", "Div", "Con"
-#' )[sort(unique(clas[[7]][]))]
-#' levels(clasr) <- rat_r
+#' clasr <- terra::as.factor(clas[[7]])
+#' rat_r <- data.frame(ID = sort(unique(terra::values(clas[[7]]))),
+#'                     trajcat = c("N-M", "S-M", "IS", "BS", "Srce",
+#'                                "RS", "Cor", "Div", "Con")[sort(unique(terra::values(clas[[7]])))])
+#' terra::cats(clasr) <- rat_r
 #' # Produce the plot using the rasterVis levelplot function
 #' rasterVis::levelplot(clasr,
 #'   col.regions = my_col,
 #'   xlab = NULL, ylab = NULL, scales = list(draw = FALSE)
 #' )
+#' }
 trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL, Nend, Nst, NFT, DateLine = FALSE) {
 
   ang1 <- ang2 <- ang3 <- ang4 <- d1 <- d2 <- d3 <- d4 <- NULL # Fix devtools check warnings
-  isink <- .SD <- .N <- cid <- coastal <- val <- NULL # Fix devtools check warnings
+  isink <- .SD <- .N <- cid <- coastal <- val <- trajIDs <- NULL # Fix devtools check warnings
+
+  # Force loading of ang values to avoid lazy loading warnings
+  invisible(terra::values(ang))
 
   TrajEnd <- TrajFT <- TrajSt <- IntS <- BounS <- TrajClas <- terra::rast(ang)
 
@@ -111,39 +113,97 @@ trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL, Nend, Nst, NFT, 
   traj$cid <- terra::cellFromXY(ang, traj[, 1:2])
 
   # A. Number of traj starting from each cell
-  TrajSt[!is.na(ang[])] <- trajSt
+  # Set trajSt for all non-NA cells in ang
+  terra::values(TrajSt)[!is.na(terra::values(ang))] <- trajSt
 
   # B. Number of traj ending in each cell
   tr <- traj[, data.table::.SD[.N], by = trajIDs] # subset last point of each trajectory
   enTraj <- tr[, .N, by = cid]
-  TrajEnd[!is.na(vel)] <- 0
-  TrajEnd[enTraj$cid] <- enTraj$N
+  terra::values(TrajEnd) <- 0
+  TrajEnd <- terra::mask(TrajEnd, vel)
+  terra::values(TrajEnd)[enTraj$cid] <- enTraj$N
 
   # C. Number of traj flowing through each cell
   cxtrj <- unique(traj, by = c("trajIDs", "cid"))
   TotTraj <- cxtrj[, .N, by = cid] # total number of trajectories per cell
-  TrajFT[!is.na(vel)] <- 0
-  TrajFT[TotTraj$cid] <- TotTraj$N
+  terra::values(TrajFT) <- 0
+  TrajFT <- terra::mask(TrajFT, vel)
+  terra::values(TrajFT)[TotTraj$cid] <- TotTraj$N
   TrajFT <- TrajFT - TrajEnd - TrajSt # subtract traj starting and ending to get those actually transversing the cell
-  TrajFT[TrajFT[] < 0] <- 0 # to avoid negative values in ice covered cells
+  terra::values(TrajFT)[terra::values(TrajFT) < 0] <- 0 # to avoid negative values in ice covered cells
 
   # C. Identify cell location for internal sinks (groups of 4 endorheic cells with angles pointing inwards)
   ll <- data.table::data.table(terra::xyFromCell(ang, 1:terra::ncell(ang)))
   ll[, 1:2] <- ll[, 1:2] + 0.1 # add small offset to the centroid
 
-  # TODO There isn't a direct replaceyment for fourCellsFromXY. Need to look at equivalent code options
-  a <- fourCellsFromXY(ang, as.matrix(ll[, 1:2]))
-  a <- t(apply(a, 1, sort))
+  # Terra replacement for raster::fourCellsFromXY()
+  # The original function returned 4 cells in a 2x2 arrangement around each point
+  # We recreate this by getting cells at the four corners of a 2x2 grid
+
+  coords <- as.matrix(ll[, 1:2])
+  res_x <- terra::xres(ang)
+  res_y <- terra::yres(ang)
+
+  # Create the four corner positions for a 2x2 grid centered on each coordinate
+  # Offsets for: bottom-left, bottom-right, top-left, top-right
+  offsets <- matrix(c(-res_x/2, -res_y/2,  # bottom-left
+                      res_x/2, -res_y/2,   # bottom-right
+                      -res_x/2, res_y/2,   # top-left
+                      res_x/2, res_y/2),   # top-right
+                    ncol = 2, byrow = TRUE)
+
+  # Get the four cells for each coordinate point
+  # Initialize as numeric matrix explicitly
+  a <- matrix(as.numeric(NA), nrow = nrow(coords), ncol = 4)
+
+  for(i in 1:nrow(coords)) {
+    if(!is.na(coords[i,1]) && !is.na(coords[i,2])) {
+      # Calculate corner coordinates
+      corner_coords <- sweep(offsets, 2, coords[i,], "+")
+      # Get cell numbers for each corner - handle one at a time
+      for(k in 1:4) {
+        cell_num <- terra::cellFromXY(ang, corner_coords[k, , drop = FALSE])
+        a[i, k] <- as.numeric(cell_num[1])
+      }
+    }
+  }
+
+  # Sort each row as in original code
+  for(i in 1:nrow(a)) {
+    a[i,] <- sort(a[i,])
+  }
 
   # If date line crossing, correct sequences on date line
   if (DateLine == TRUE) {
-    a[seq(ncol(ang), by = ncol(ang), length = nrow(ang)), ] <- t(apply(a[seq(ncol(ang), by = ncol(ang), length = nrow(ang)), ], 1, function(x) {
+    a[seq(terra::ncol(ang), by = terra::ncol(ang), length = terra::nrow(ang)), ] <- t(apply(a[seq(terra::ncol(ang), by = terra::ncol(ang), length = terra::nrow(ang)), ], 1, function(x) {
       x[c(2, 1, 4, 3)]
     }))
   }
 
   # Extract the angles for each group of 4 cells
-  b <- matrix(terra::extract(ang, as.vector(a)), nrow = terra::ncell(ang), ncol = 4, byrow = FALSE)
+  # Use direct indexing approach that works better with terra
+  b <- matrix(NA, nrow = nrow(a), ncol = 4)
+
+  # Get all angle values once to avoid repeated calls
+  ang_values <- terra::values(ang)
+
+  for(i in 1:nrow(a)) {
+    for(j in 1:4) {
+      cell_val <- a[i,j]  # Should now be numeric
+      if(!is.na(cell_val) && cell_val > 0 && cell_val <= length(ang_values)) {
+        b[i,j] <- ang_values[cell_val]
+      }
+    }
+  }
+  # Ensure a and b have the same number of rows before combining
+  if(nrow(a) != nrow(b)) {
+    # Pad b to match a if needed
+    if(nrow(b) < nrow(a)) {
+      b_padded <- matrix(NA, nrow = nrow(a), ncol = 4)
+      b_padded[1:nrow(b), ] <- b
+      b <- b_padded
+    }
+  }
   ll[, c("c1", "c2", "c3", "c4", "ang1", "ang2", "ang3", "ang4") := data.frame(a, b)]
 
   # now look if the 4 angles point inwards (internal sink)
@@ -153,22 +213,35 @@ trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL, Nend, Nst, NFT, 
 
   # get the cids for the cells contained in the sinks
   celdas <- ll[isink == 1, 3:6]
-  IntS[!is.na(vel)] <- 0
-  IntS[c(celdas[[1]], celdas[[2]], celdas[[3]], celdas[[4]])] <- 1
+  terra::values(IntS) <- 0
+  IntS <- terra::mask(IntS, vel)
+
+  # Convert data.table columns to vectors and combine
+  if(nrow(celdas) > 0) {
+    # Convert to numeric vectors to avoid list issues
+    sink_cells <- c(as.numeric(celdas$c1), as.numeric(celdas$c2),
+                    as.numeric(celdas$c3), as.numeric(celdas$c4))
+    sink_cells <- sink_cells[!is.na(sink_cells)]  # Remove NA values
+    if(length(sink_cells) > 0) {
+      terra::values(IntS)[sink_cells] <- 1
+    }
+  }
 
   # D. Identify cell location for boundary sinks (coastal cells which are disconected from cooler climates under warming or warmer climates under cooling)
   # detect coastal cells
-  coast <- suppressWarnings(terra::boundaries(vel, type = "inner", asNA = TRUE)) # to avoid warning for coercing NAs via asNA = TRUE
+  coast <- suppressWarnings(terra::boundaries(vel, inner = TRUE)) # terra uses 'inner' parameter instead of 'type'
 
   # make a list of vel values and SST values for each coastal cells and their marine neighbours
-  cc <- stats::na.omit(data.table::data.table(cid = 1:terra::ncell(vel), coast = coast[]))
-  ad <- terra::adjacent(vel, cc$cid, 8, sorted = TRUE, include = TRUE) # matrix with adjacent cells
+  cc <- stats::na.omit(data.table::data.table(cid = 1:terra::ncell(vel), coast = terra::values(coast)))
+  ad <- terra::adjacent(vel, cc$cid, directions = 8, include = TRUE) # matrix with adjacent cells
+  # Sort the adjacency matrix to ensure consistent ordering (replaces sorted=TRUE from raster package)
+  ad <- ad[order(ad[, 1], ad[, 2]), ]
   ad <- data.table::data.table(
     coastal = ad[, 1],
     adjacent = ad[, 2],
-    cvel = vel[ad[, 1]],
-    ctemp = mn[ad[, 1]],
-    atemp = mn[ad[, 2]]
+    cvel = terra::values(vel)[ad[, 1]],
+    ctemp = terra::values(mn)[ad[, 1]],
+    atemp = terra::values(mn)[ad[, 2]]
   )
 
   # locate the sinks
@@ -176,12 +249,16 @@ trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL, Nend, Nst, NFT, 
   j <- ad[, ifelse(.SD$cvel > 0, all(.SD$ctemp <= .SD$atemp), all(.SD$ctemp >= .SD$atemp)), by = coastal]
   data.table::setkey(j)
   j <- unique(j)
-  BounS[!is.na(vel)] <- 0
-  BounS[unique(subset(j$coastal, j$V == TRUE))] <- 1
+  terra::values(BounS) <- 0
+  BounS <- terra::mask(BounS, vel)
+  boundary_cells <- unique(subset(j$coastal, j$V == TRUE))
+  if(length(boundary_cells) > 0) {
+    terra::values(BounS)[as.numeric(boundary_cells)] <- 1
+  }
 
   # Total number of trajectories per cell and proportions per cell
-  TrajTotal <- sum(c(TrajSt, TrajFT, TrajEnd), na.rm = TRUE)
-  TrajTotal[is.na(ang[])] <- NA
+  TrajTotal <- TrajSt + TrajFT + TrajEnd
+  terra::values(TrajTotal)[is.na(terra::values(ang))] <- NA
   PropTrajEnd <- (TrajEnd / TrajTotal) * 100
   PropTrajFT <- (TrajFT / TrajTotal) * 100
   PropTrajSt <- (TrajSt / TrajTotal) * 100
@@ -189,30 +266,31 @@ trajClas <- function(traj, vel, ang, mn, trajSt, tyr, nmL, smL, Nend, Nst, NFT, 
   # reclassify by traj length
   rclM <- matrix(c(0, (nmL / tyr), 1, (nmL / tyr), (smL / tyr), 2, (smL / tyr), Inf, 3), ncol = 3, byrow = TRUE)
   v <- terra::rast(vel)
-  v[] <- abs(vel[])
+  terra::values(v) <- abs(terra::values(vel))
   ClassMov <- terra::classify(v, rclM)
 
   # Classify the cells
-  TrajClas[!is.na(vel)] <- 0
+  terra::values(TrajClas) <- 0
+  TrajClas <- terra::mask(TrajClas, vel)
 
   # capture non-moving (1)
-  TrajClas[ClassMov[] == 1] <- 1
+  terra::values(TrajClas)[terra::values(ClassMov) == 1] <- 1
 
   # capture slow-moving (2)
-  TrajClas[ClassMov[] == 2] <- 2
+  terra::values(TrajClas)[terra::values(ClassMov) == 2] <- 2
 
   # capture internal (3) and (4) boundary sinks
-  TrajClas[IntS[] == 1] <- 3
-  TrajClas[BounS[] == 1] <- 4
+  terra::values(TrajClas)[terra::values(IntS) == 1] <- 3
+  terra::values(TrajClas)[terra::values(BounS) == 1] <- 4
 
   # Classify remaining cells into sources(5), rel sinks(6), corridors(7), divergence(8) and convergence(9)
-  d <- stats::na.omit(data.table::data.table(cid = 1:terra::ncell(TrajClas), val = TrajClas[]))
+  d <- stats::na.omit(data.table::data.table(cid = 1:terra::ncell(TrajClas), val = terra::values(TrajClas)))
   d <- d[val == 0, 1]
-  d[, Nend := PropTrajEnd[d$cid]]
-  d[, Nst := PropTrajSt[d$cid]]
-  d[, NFT := PropTrajFT[d$cid]]
+  d[, Nend := terra::values(PropTrajEnd)[d$cid]]
+  d[, Nst := terra::values(PropTrajSt)[d$cid]]
+  d[, NFT := terra::values(PropTrajFT)[d$cid]]
   d$clas <- ifelse(d$Nend == 0, 5, ifelse(d$Nend > Nend & d$Nst < Nst, 6, ifelse(d$NFT > NFT, 7, ifelse(d$Nend < d$Nst, 8, 9))))
-  TrajClas[d$cid] <- d$clas
+  terra::values(TrajClas)[d$cid] <- d$clas
 
   # return raster
   s <- c(PropTrajEnd, PropTrajFT, PropTrajSt, ClassMov, IntS, BounS, TrajClas)

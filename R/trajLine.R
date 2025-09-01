@@ -18,7 +18,7 @@
 #' @export
 #' @author Jorge Garcia Molinos
 #' @examples
-#'
+#' \dontrun{
 #' HSST <- VoCC_get_data("HSST.tif")
 #'
 #' yrSST <- sumSeries(HSST,
@@ -48,31 +48,34 @@
 #' terra::plot(mn)
 #' terra::plot(lns, add = TRUE)
 #'
-#' \dontrun{
 #' # Export as ESRI shape file
 #' terra::writeVector(lns, filename = "velTraj", filetype = "ESRI Shapefile")
 #' }
-trajLine <- function(x, projx = "EPSG::4326") {
-  coordinates <- NULL # Fix devtools check warnings
+trajLine <- function(x, projx = "EPSG:4326") {
 
-  spl <- split(x, x$trajIDs)
+  # Get distance between first and last points
+  d <- dplyr::bind_rows(dplyr::slice(x, 1), dplyr::slice(x, dplyr::n())) %>%
+    sf::st_as_sf(coords = c("llon", "llat")) %>%
+    sf::st_set_crs(projx) %>%
+    sf::st_distance(.) %>%
+    max()
 
-  # remove traj consisting of a single point
-  i <- sapply(spl, function(x) {
-    nrow(x) == 1
-  })
-  spl <- spl[!i]
+  # Get number of steps; anything <240 means that the tracer died on land
+  steps <- max(x$Steps)
 
-  lns <- vector("list", length(spl))
-  for (i in 1:length(spl)) {
-    s <- which(abs(diff(coordinates(spl[[i]][, 1:2]))) > 180)
-    if (length(s) > 0) {
-      SPL <- split(as.data.frame(coordinates(spl[[i]][, 1:2])), cumsum(1:nrow(coordinates(spl[[i]][, 1:2])) %in% (s + 1)))
-      lns[[i]] <- sp::Lines(lapply(SPL, function(x) Line(coordinates(x))), ID = i)
-    } else {
-      lns[[i]] <- sp::Lines(list(sp::Line(coordinates(spl[[i]][, 1:2]))), ID = i)
-    }
-  }
+  # Get distance along the tracer
+  line_string <- x %>%
+    sf::st_as_sf(coords = c("llon", "llat")) %>%
+    sf::st_set_crs(projx) %>%
+    dplyr::summarise(do_union = FALSE) %>%
+    sf::st_cast(to = "LINESTRING") %>%
+    dplyr::mutate(steps = steps,
+                  line_distance = d,
+                  line_length = sf::st_length(.),
+                  cellID = dplyr::first(x$cellIDs),
+                  lon = dplyr::first(x$llon),
+                  lat = dplyr::first(x$llat))
 
-  sp::SpatialLinesDataFrame(sp::SpatialLines(lns, proj4string = terra::crs(projx)), data = data.frame(trajIDs = unique(x$trajIDs)))
+  return(line_string)
+
 }

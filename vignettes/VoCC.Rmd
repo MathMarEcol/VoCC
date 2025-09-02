@@ -2,14 +2,15 @@
 title: "VoCC"
 output: rmarkdown::html_vignette
 vignette: >
-%\VignetteIndexEntry{VoCC}
+  %\VignetteIndexEntry{VoCC}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteIndexEntry{VoCC}
   \usepackage[utf8]{inputenc}
-  ---
+---
+  
   
 ```{r setup, include = FALSE}
-  knitr::opts_chunk$set(
+knitr::opts_chunk$set(
 collapse = TRUE,
 comment = "#>"
 )
@@ -132,7 +133,7 @@ if(!is.empty(missing_points)){
   nearest_values <- terra::extract(dv[[1]], nearest_cells) # get the values from the nearest marine cells.
   marshift$DV[is.na(marshift$DV)] <- nearest_values[, 2] # Replace the NA values in `marshift$GV`
 }
-  
+
 ```
 
 ```{r}
@@ -204,12 +205,13 @@ x1 <- crop(gv[[1]], ext(-180, 0, -90, 90))
 x2 <- crop(gv[[1]], ext(0, 180, -90, 90))
 ext(x1) <- c(180, 360, -90, 90)
 velc <- merge(x1, x2)
+
 # crop to the desired extent
 # display restricted to +180 longitude to avoid plotting issues with date line crossing
 velc <- crop(velc, c(90, 180, -32, 33))
 ```
 
-We can now populate the data frame with the cell centroid coordinates for the trajectories and associated input data 
+We can now populate the data frame with the cell centroid coordinates for the trajectories.
 
 ```{r}
 lonlat <- data.frame(terra::xyFromCell(velc, 1:ncell(velc)))
@@ -223,32 +225,32 @@ lonlat <- drop_na(lonlat)
 Let's calculate the trajectories with parallel processing to demonstrate how this can be used to speed things up (especially useful when dealing with fine resolutions or large extents).
 
 ```{r}
-traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, tstep = 1/12)
 
-# THIS IS EXTREMELY SLOW.....
-# system.time({
-#   traj <- map(lonlat %>% group_split(lineID), 
-#               ~ voccTraj(lonlat = .x, vel, ang, mn, tyr = 50, tstep = 1/12))
-# })
+traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, tstep = 1/12)
 
 ```
 
 Plot them over the climate velocities and the EEZ polygons from the EEZs data set (Fig. 3a in Garcia Molinos et al. 2019)
 
-```{r}
-EEZs <- sf::st_read(system.file("extdata", "EEZs.gpkg", package = "VoCCdata"))
-
-# simplify polygons to speed plotting up
-eez_simp <- sf::st_simplify(EEZs, preserveTopology = TRUE, dTolerance = 0.5)
-
-
+```{r message=FALSE, warning=FALSE}
 # create the spatial object with the trajectories and plot them together with the EEZ polygons
 lns <- map(traj %>% group_split(cellIDs), trajLine) %>% 
   purrr::list_rbind() %>% 
   sf::st_sf()
 
-ggplot(data = lns) + geom_sf(aes(colour = cellID))
+# Load and simplify polygons to speed plotting up
+EEZs <- sf::st_read(system.file("extdata", "EEZs.gpkg", package = "VoCCdata")) %>% 
+  sf::st_break_antimeridian() %>% 
+  sf::st_simplify(preserveTopology = TRUE, dTolerance = 500) %>% 
+  sf::st_crop(xmin = 75, xmax = 180, ymin = -35, ymax = 35)
 
+ggplot() + 
+  geom_spatraster(data = velc, aes(fill = voccMag)) +
+  scale_fill_viridis_c(option = "inferno", name = "Velocity") +
+  geom_sf(data = lns %>% sf::st_shift_longitude(), colour = "grey70", linewidth = 0.1) +
+  geom_sf(data = EEZs %>% sf::st_shift_longitude(), colour = "white", fill = NA, linewidth = 0.3) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0))
 
 ```
 

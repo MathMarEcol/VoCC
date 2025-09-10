@@ -11,16 +11,14 @@
 #' @param vel \code{raster} with the magnitude of gradient-based climate velocity.
 #' @param ang \code{raster} with velocity angles in degrees.
 #' @param mn \code{raster} with the overall mean climatic value over the period of interest.
-#' @param vel_c
-#' @param ang_c
-#' @param mn_c
-#' @param fine_coast
-#' @param lk_up
-#' @param tstep
-#' @param tyr \code{integer} temporal length of the period of interest.
+#' @param x_res Numeric. Resolution of the grid in longitude direction (degrees or km).
+#' @param y_res Numeric. Resolution of the grid in latitude direction (degrees or km).
+#' @param tstep Numeric. Timestep for each trajectory iteration (usually decimal year).
+#' @param tyr Integer. Temporal length of the period of interest (years).
+#' @param grid_resolution Character. "coarse" (default) or "fine". Controls how land crossings are handled and allows for higher resolution grids.
 #'
-#' @return a \code{data.frame} containing the coordinates ("x", "y") of the constituent
-#' points and identification number ("trajIDs") for each trajectory.
+#' @return a \code{tibble} containing the coordinates ("lon", "lat") of the constituent
+#' points, time step ("Steps"), identification number ("ID") for each trajectory, and cell IDs for start and end cells.
 #'
 #' @references \href{https://www.nature.com/articles/nature12976}{Burrows et al. 2014}. Geographical limits to species-range shifts are suggested by climate velocity. Nature, 507, 492-495.
 #'
@@ -64,11 +62,11 @@
 #' }
 #'
 voccTraj <- function(lonlat, # Starting points
-                                     vel, ang, mn, # Components of velocity: speed, angle and climatology
-                                     x_res, y_res, # Resolution of the grid at which velocity was computed
-                                     tstep, # Timestep (usually decimal year)
-                                     tyr = 20, # Number of years to run for
-                                     grid_resolution = "coarse") { # Set to "fine" if you have disaggregated to original velocity field to a finer resolution
+                     vel, ang, mn, # Components of velocity: speed, angle and climatology
+                     x_res, y_res, # Resolution of the grid at which velocity was computed
+                     tstep, # Timestep (usually decimal year)
+                     tyr = 20, # Number of years to run for
+                     grid_resolution = "coarse") { # Set to "fine" if you have disaggregated to original velocity field to a finer resolution
 
   # Internal helper functions ----------------------------------------------------
 
@@ -113,34 +111,35 @@ voccTraj <- function(lonlat, # Starting points
     # Adjust for dateline jumps
     lonnew <- lonnew - (360 * floor((lonnew + 180) / 360))
     return(data.frame(lonnew, latnew) %>%
-             setNames(c("dlon", "dlat")))
+             stats::setNames(c("dlon", "dlat")))
   }
 
   # Function to find closest cooler/warmer cell within the union of two levels of 8-cell adjacency from the "departed" and "destination" cells
   get_dest_cell_fine <- function(rw) { # A to-from cell pair and the buffer around a cell on land that can be searched for a suitable cell
     # Find clumps of ocean; the rule is that you can't jump from one clump to another, because this would mean passing over unbroken land
-    pos_depart <- data.frame(x = rw %>% pluck(3), y = rw %>% pluck(4))
-    xy <- terra::xyFromCell(mn, as.vector(as.matrix(rw[1:2]))) %>% # Coordinates of cell centres for start cell and end cell %>%
+    pos_depart <- data.frame(x = purrr::pluck(rw, 3),
+                             y = purrr::pluck(rw, 4))
+    xy <- terra::xyFromCell(mn, as.vector(as.matrix(rw[1:2]))) %>% # Coordinates of cell centres for start cell and end cell
       as.data.frame()
     bfr = ((y_res*111.325) + 1) * 1000 # Set buffer to be 1 grid-square width at the equator + 1 km
-    xy <- xy %>%
-      st_as_sf(coords = c("x", "y"), crs = "EPSG:4326")
-    sp_buffer <- st_buffer(st_as_sf(xy), bfr) # Remembering that buffer is in metres
+    xy <- sf::st_as_sf(xy, coords = c("x", "y"), crs = "EPSG:4326")
+    sp_buffer <- sf::st_buffer(sf::st_as_sf(xy), bfr) # Remembering that buffer is in metres
+
     buffer_zone <- terra::extract(mn, sp_buffer, cells = TRUE, xy = TRUE, touches = TRUE) %>%
-      dplyr::select(-ID) %>%
-      distinct() %>%
+      dplyr::select(-"ID") %>%
+      dplyr::distinct() %>%
       dplyr::rename(sst = 1) %>% #*** rename "climatology", if needed
-      dplyr::select(x, y, sst, cell) %>%
-      drop_na(sst)
+      dplyr::select("x", "y", "sst", "cell") %>%
+      tidyr::drop_na("sst")
+
     clumped <- buffer_zone %>%
-      dplyr::select(-cell) %>%
-      rast(crs = "EPSG:4326") %>%
+      dplyr::select(-"cell") %>%
+      terra::rast(crs = "EPSG:4326") %>%
       terra::patches(directions = 8, allowGaps = FALSE)
+
     # Which clump did I start in?
-    r1 <- rw %>%
-      pluck(1) # We use this cell a lot, so let's just make it an object
-    from_clump <- terra::extract(clumped, terra::xyFromCell(mn, r1)) %>%
-      pluck(1)
+    r1 <- purrr::pluck(rw, 1) # We use this cell a lot, so let's just make it an object
+    from_clump <- purrr::pluck(terra::extract(clumped, terra::xyFromCell(mn, r1)), 1)
     # What are the coordinates of cells within the search area that fall in the clump I came from?
     search_xy <- terra::xyFromCell(clumped, which(clumped[] == from_clump)) %>%
       as.data.frame()
@@ -152,53 +151,58 @@ voccTraj <- function(lonlat, # Starting points
     if(unlist(vel[r1]) > 0) {
       # Find all cells in the search area that meet the sst criterion
       o <- or %>%
-        dplyr::filter(sst < unlist(mn[r1])) %>%
-        na.omit()
+        dplyr::filter(.data$sst < unlist(mn[r1])) %>%
+        stats::na.omit()
       if(nrow(o) == 0) {
         dest_cell <- NA # Set condition with which to ID stuck cells (i.e., if there are no suitable cells in the search area)
       } else {
-        potential_dest_cells <- o %>%
-          st_as_sf(coords = c("x", "y"), crs = crs(rast())) %>%
-          mutate(distances = st_distance(st_as_sf(pos_depart, coords = c("x", "y"), crs = crs(rast())), .) %>%
-                   as.vector()) %>%
-          arrange(distances)
+        potential_dest_cells <- sf::st_as_sf(o, coords = c("x", "y"), crs = sf::st_crs(terra::rast())) %>%
+          dplyr::mutate(distances = sf::st_distance(x = sf::st_as_sf(pos_depart,
+                                                                     coords = c("x", "y"),
+                                                                     crs = "EPSG:4326"),
+                                                    y = .data) %>%
+                          as.vector()) %>%
+          dplyr::arrange("distances")
         n_cells <- 25 # Number of "close" cells to pick among *** Can change this, or set as an argument (just remove the hard-code here)
         if(nrow(potential_dest_cells) >= n_cells) {
           dest_cell <- potential_dest_cells %>%
-            slice_head(n = n_cells) %>% # Get the closest cells
-            slice_sample(n = 1) %>% # Pick one at random
-            pull(cell)
+            dplyr::slice_head(n = n_cells) %>% # Get the closest cells
+            dplyr::slice_sample(n = 1) %>% # Pick one at random
+            dplyr::pull(.data$cell)
         } else { # If fewer than n_cells, sample 10% of what you have
           dest_cell <- potential_dest_cells %>%
-            slice_head(n = ceiling(nrow(potential_dest_cells)/10)) %>%
-            slice_sample(n = 1) %>%
-            pull(cell)
+            dplyr::slice_head(n = ceiling(nrow(potential_dest_cells)/10)) %>%
+            dplyr::slice_sample(n = 1) %>%
+            dplyr::pull(.data$cell)
         }
       }
     } else { # Otherwise, find nearest cells that is warmer, if there are any
       # Find all cells in the search area that meet the sst criterion
       o <- or %>%
-        dplyr::filter(sst < unlist(mn[r1])) %>%
-        na.omit()
+        dplyr::filter(.data$sst < unlist(mn[r1])) %>%
+        stats::na.omit()
       if(nrow(o) == 0) {
         dest_cell <- NA # Set condition with which to ID stuck cells (i.e., if there are no suitable cells in the search area)
       } else {
-        potential_dest_cells <- o %>%
-          st_as_sf(coords = c("x", "y"), crs = crs(rast())) %>%
-          mutate(distances = st_distance(st_as_sf(pos_depart, coords = c("x", "y"), crs = crs(rast())), .) %>%
-                   as.vector()) %>%
-          arrange(distances)
+        potential_dest_cells <- sf::st_as_sf(o, coords = c("x", "y"), crs = sf::st_crs(terra::rast())) %>%
+          dplyr::mutate(distances = sf::st_distance(x = sf::st_as_sf(pos_depart,
+                                                                     coords = c("x", "y"),
+                                                                     crs = "EPSG:4326"),
+                                                    y = .data) %>%
+                          base::as.vector()) %>%
+          dplyr::arrange(.data$distances)
+
         n_cells <- 25 # Number of "close" cells to pick among *** Can change this, or set as an argument (just remove the hard-code here)
         if(nrow(potential_dest_cells) >= n_cells) {
           dest_cell <- potential_dest_cells %>%
-            slice_head(n = n_cells) %>% # Get the closest cells
-            slice_sample(n = 1) %>% # Pick one at random
-            pull(cell)
+            dplyr::slice_head(n = n_cells) %>% # Get the closest cells
+            dplyr::slice_sample(n = 1) %>% # Pick one at random
+            dplyr::pull(.data$cell)
         } else { # If fewer than n_cells, sample 10% of what you have
           dest_cell <- potential_dest_cells %>%
-            slice_head(n = ceiling(nrow(potential_dest_cells)/10)) %>%
-            slice_sample(n = 1) %>%
-            pull(cell)
+            dplyr::slice_head(n = ceiling(nrow(potential_dest_cells)/10)) %>%
+            dplyr::slice_sample(n = 1) %>%
+            dplyr::pull(.data$cell)
         }
       }
     }
@@ -209,24 +213,24 @@ voccTraj <- function(lonlat, # Starting points
   # Use when working with the coarse grid!
   get_dest_cell_coarse <- function(rw, bfr = 75) { # A from-to cell pair and coordinates of departure point; bfr is a search radius in km for nearest cooler cell, if you end on land
     # Find clumps of ocean; the rule is that you can't jump from one clump to another, because this would mean passing over unbroken land
-    pos_depart <- data.frame(x = rw %>% pluck(3), y = rw %>% pluck(4)) %>% # Departure coordinates
-      st_as_sf(coords = c("x", "y"), crs = "EPSG:4326")
+    pos_depart <- data.frame(x = purrr::pluck(rw, 3), y = purrr::pluck(rw, 4)) %>% # Departure coordinates
+      sf::st_as_sf(coords = c("x", "y"), crs = "EPSG:4326")
     # xy <- terra::xyFromCell(mn, as.vector(as.matrix(rw))) %>% # Coordinates of cell centres for start cell and end cell
     #     st_as_sf(coords = c("x", "y"), crs = "EPSG:4326")
-    sp_buffer <- st_buffer(pos_depart, bfr*1000) # Buffer around departure point, remembering that buffer is in metres
+    sp_buffer <- sf::st_buffer(pos_depart, bfr*1000) # Buffer around departure point, remembering that buffer is in metres
     buffer_zone <- terra::extract(mn, sp_buffer, cells = TRUE, xy = TRUE) %>%
-      dplyr::select(-ID) %>%
-      distinct() %>%
+      dplyr::select(-"ID") %>%
+      dplyr::distinct() %>%
       dplyr::rename(sst = 1) %>% #*** rename "climatology", if needed
-      dplyr::select(x, y, sst, cell)
+      dplyr::select("x", "y", "sst", "cell")
+
     clumped <- buffer_zone %>%
-      dplyr::select(-cell) %>%
-      rast(crs = "EPSG:4326") %>%
+      dplyr::select(-"cell") %>%
+      terra::rast(crs = "EPSG:4326") %>%
       terra::patches(directions = 8, allowGaps = FALSE)
     # Which clump did I start in?
-    r1 <- rw %>%
-      pluck(1) # We use this cell a lot, so let's just make it an object
-    from_clump <- terra::extract(clumped, terra::xyFromCell(mn, r1)) %>%
+    r1 <- purrr::pluck(rw, 1) # We use this cell a lot, so let's just make it an object
+    from_clump <- terra::extract(clumped, terra::xyFromCell(mn, r1))  %>%
       unlist()
     # What are the coordinates of cells within the search area that fall in the clump I came from?
     search_xy <- terra::xyFromCell(clumped, which(clumped[] == from_clump)) %>%
@@ -237,8 +241,8 @@ voccTraj <- function(lonlat, # Starting points
     # If velocity is positive, find nearest cooler cell, if there is one
     if(vel[r1] > 0) {
       o <- or %>%
-        dplyr::filter(sst < unlist(mn[r1])) %>%
-        na.omit()
+        dplyr::filter(.data$sst < unlist(mn[r1])) %>%
+        stats::na.omit()
       # %>%
       #   bind_cols(., terra::xyFromCell(mn, .$cell)) #*** Do we need this line?
       if(nrow(o) == 0) {
@@ -246,15 +250,16 @@ voccTraj <- function(lonlat, # Starting points
       } else {
         # pt <- terra::xyFromCell(mn, r1) %>%
         #   data.frame()
-        dest_cell <- st_distance(pos_depart,
-                                 st_as_sf(data.frame(o), coords = c("x", "y"), crs = "EPSG:4326")) %>%
+        dest_cell <- sf::st_distance(pos_depart,
+                                     sf::st_as_sf(data.frame(o), coords = c("x", "y"),
+                                                  crs = "EPSG:4326")) %>%
           which.min() %>%
-          o$cell[.] # The closest cell with appropriate sst
+          { o$cell[.] } # The closest cell with appropriate sst
       }
     } else { # Otherwise, find nearest warmer cell, if there is one
       o <- or %>%
-        dplyr::filter(sst < unlist(mn[r1])) %>%
-        na.omit()
+        dplyr::filter(.data$sst < unlist(mn[r1])) %>%
+        stats::na.omit()
       # %>%
       #   bind_cols(., terra::xyFromCell(mn, .$sst)) #*** Do we need this line?
       if(nrow(o) == 0) {
@@ -262,10 +267,11 @@ voccTraj <- function(lonlat, # Starting points
       } else {
         # pt <- terra::xyFromCell(mn, r1) %>%
         #   data.frame()
-        dest_cell <- st_distance(pos_depart,
-                                 st_as_sf(data.frame(o), coords = c("x", "y"), crs = "EPSG:4326")) %>%
+        dest_cell <- sf::st_distance(pos_depart,
+                                     sf::st_as_sf(data.frame(o), coords = c("x", "y"),
+                                                  crs = "EPSG:4326")) %>%
           which.min() %>%  # The closest cell with appropriate sst
-          o$cell[.]
+          { o$cell[.] }
       }
     }
     return(dest_cell)
@@ -275,15 +281,15 @@ voccTraj <- function(lonlat, # Starting points
   # Setup -------------------------------------------------------------------
 
   # A base raster with original resolution and extent
-  r_base <- rast(res = c(x_res, y_res)) %>%
-    crop(vel)
+  r_base <- terra::rast(res = c(x_res, y_res)) %>%
+    terra::crop(vel)
   # Constrain max velocity to avoid stepping over grid squares
   max_vel = 111.325*x_res/tstep
   vel[vel > max_vel] <- max_vel
   vel[vel < -max_vel] <- -max_vel
   # Sort out start points
   lonlat <- lonlat %>%
-    dplyr::select(x, y) %>%  # Collect just lon and lat (in case there's anything else there)
+    dplyr::select("x", "y") %>%  # Collect just lon and lat (in case there's anything else there)
     as.data.frame()
   # Get initial descriptors
   tcells <- terra::cellFromXY(vel, lonlat) # # Cell IDs of starting cells
@@ -306,12 +312,13 @@ voccTraj <- function(lonlat, # Starting points
 
   # Loop through the trajectories
   for(i in 1:(tyr/tstep)) { # 1:(tyr/tstep)
-    #   for(i in x) { # 1:(tyr/tstep)
     llold <- lonlat # Take a copy of lonlat
+
     vell <- terra::extract(vel, llold) %>%
-      pull(voccMag)
+      dplyr::pull(.data$voccMag)
     angg <- terra::extract(ang, llold) %>%
-      pull(voccAng)
+      dplyr::pull(.data$voccAng)
+
     fcells <- terra::cellFromXY(vel,llold) # Get the cells that the trajectories start in
     # Get new locations
     lonlat <- destcoords(vell, angg, tstep, llold, y_res, x_res) # Extract lon and lat of landing point
@@ -335,8 +342,7 @@ voccTraj <- function(lonlat, # Starting points
         SFlags <- sflags[onland]
         fcell <- fcells[onland]
         tcell <- tcells[onland]
-        ft <- data.frame(fcell = fcell, tcell = tcell, fx = fpos %>% pluck(1), fy = fpos %>% pluck(2), code = paste(fcell, tcell, sep = " "), ref = 1:length(fcell))
-        # ft <- data.frame(fcell = fcell, tcell = tcell, code = paste(fcell, tcell, sep = " "), ref = 1:length(fcell))
+        ft <- data.frame(fcell = fcell, tcell = tcell, fx = purrr::pluck(fpos, 1), fy = purrr::pluck(fpos, 2), code = paste(fcell, tcell, sep = " "), ref = 1:length(fcell))
         ttcell <- apply(ft[,1:4], 1, get_dest_cell_fine) #*** fine switch
         # Filter "stuck" flags here
         stuck <- which(is.na(ttcell)) # This is set in get_dest_cell(), where no cell in the "catchment" has a suitable sst to facilitate movement
@@ -347,7 +353,7 @@ voccTraj <- function(lonlat, # Starting points
         ttpos[stuck,] <- fpos[stuck,] # If they're stuck, pass on starting points
         ttcell[stuck] <- fcell[stuck] # If they're stuck, pass on starting cells
 
-        ttpos[unstuck,] <- xyFromCell(mn, ttcell[unstuck])
+        ttpos[unstuck,] <- terra::xyFromCell(mn, ttcell[unstuck])
         # Collect results
         lonlat[onland,] <- ttpos
         tcells[onland] <- ttcell
@@ -362,7 +368,10 @@ voccTraj <- function(lonlat, # Starting points
         tcell <- tcells[onland]
         # ft <- data.frame(fcell = fcell, tcell = tcell, code = paste(fcell, tcell, sep = " "), ref = 1:length(fcell))
         # ttcell <- apply(ft[,1:2], 1, get_dest_cell)
-        ft <- data.frame(fcell = fcell, tcell = tcell, fx = fpos %>% pluck(1), fy = fpos %>% pluck(2), code = paste(fcell, tcell, sep = " "), ref = 1:length(fcell))
+        ft <- data.frame(fcell = fcell, tcell = tcell,
+                         fx = fpos %>% purrr::pluck(1),
+                         fy = fpos %>% purrr::pluck(2),
+                         code = paste(fcell, tcell, sep = " "), ref = 1:length(fcell))
         ttcell <- apply(ft[,1:4], 1, get_dest_cell_coarse)
         # Filter "stuck" flags here
         stuck <- which(is.na(ttcell)) # This is set in get_dest_cell(), where no cell in the "catchment" has a suitable sst to facilitate movement
@@ -374,34 +383,34 @@ voccTraj <- function(lonlat, # Starting points
         ttcell[stuck] <- fcell[stuck] # If they're stuck, pass on starting cells
         if(length(unstuck) > 0) {
           tt_original_cells <- terra::cellFromXY(mn, fpos[unstuck,]) # Departure cells in the resolution of the original velocity field
-          ttdat <- tibble(ttcell = ttcell[unstuck]) %>% # Destination cells (nearest cell with appropriate sst)
-            mutate(loncent = terra::xFromCell(mn, ttcell), # Coordinates of destination cell
-                   latcent = terra::yFromCell(mn, ttcell)) %>%  # Coordinates of destination cell
-            mutate(e = NA, w = NA, n = NA, s = NA, dlon = NA, dlat = NA) # To facilitate finding corners of the cells
+          ttdat <- tibble::tibble(ttcell = ttcell[unstuck]) %>% # Destination cells (nearest cell with appropriate sst)
+            dplyr::mutate(loncent = terra::xFromCell(mn, ttcell), # Coordinates of destination cell
+                          latcent = terra::yFromCell(mn, ttcell)) %>%  # Coordinates of destination cell
+            dplyr::mutate(e = NA, w = NA, n = NA, s = NA, dlon = NA, dlat = NA) # To facilitate finding corners of the cells
           corner_block_size <- 0.25*x_res # The "corner" is set to 0.25 of the grid square at the original resolution
           # Send trajectory to the nearest corner of the appropriate cell, where corner is a quarter of the grid size. Position is "fuzzed" within this corner at random.
-          ttdat$e <- ttdat$loncent + (0.5 * x_res) - (runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
-          ttdat$w <- ttdat$loncent - (0.5 * x_res) + (runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
-          ttdat$n <- ttdat$latcent + (0.5 * y_res) - (runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
-          ttdat$s <- ttdat$latcent - (0.5 * y_res) + (runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
+          ttdat$e <- ttdat$loncent + (0.5 * x_res) - (stats::runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
+          ttdat$w <- ttdat$loncent - (0.5 * x_res) + (stats::runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
+          ttdat$n <- ttdat$latcent + (0.5 * y_res) - (stats::runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
+          ttdat$s <- ttdat$latcent - (0.5 * y_res) + (stats::runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
           coords <- with(ttdat, cbind(n, e, n, w, s, w, s, e)) # NE, NW, SW, SE corners' coordinates
           # Find distances from departure point to corners of ttcell
           get_dist <- function(y1, x1, y2, x2) {
-            pt1 <- st_as_sf(data.frame(x = x1, y = y1), coords = c("x", "y"), crs = crs(rast()))
-            pt2 <- st_as_sf(data.frame(x = x2, y = y2), coords = c("x", "y"), crs = crs(rast()))
-            out <- st_distance(pt1, pt2, by_element = TRUE) %>%
+            pt1 <- sf::st_as_sf(data.frame(x = x1, y = y1), coords = c("x", "y"), crs = sf::st_crs(terra::rast()))
+            pt2 <- sf::st_as_sf(data.frame(x = x2, y = y2), coords = c("x", "y"), crs = sf::st_crs(terra::rast()))
+            out <- sf::st_distance(pt1, pt2, by_element = TRUE)  %>%
               as.vector()
             return(out)
           }
           corners <- data.frame(ne = get_dist(fpos[unstuck,2], fpos[unstuck,1], coords[,1], coords[,2])) %>%
-            mutate(nw = get_dist(fpos[unstuck,2], fpos[unstuck,1], coords[,3], coords[,4]),
-                   sw = get_dist(fpos[unstuck,2], fpos[unstuck,1], coords[,5], coords[,6]),
-                   se = get_dist(fpos[unstuck,2], fpos[unstuck,1], coords[,7], coords[,8]))
+            dplyr::mutate(nw = get_dist(fpos[unstuck,2], fpos[unstuck,1], coords[,3], coords[,4]),
+                          sw = get_dist(fpos[unstuck,2], fpos[unstuck,1], coords[,5], coords[,6]),
+                          se = get_dist(fpos[unstuck,2], fpos[unstuck,1], coords[,7], coords[,8]))
           # Select nearest corner
           cornset <- apply(corners, 1, mfind)*2 # Identify which corners for each onland cell. Have to mul by 2 to shift along correctly.
           cornset <- cbind(cornset, coords) # Add in coordinates
           ttdat[,8:9] <- data.frame(t(apply(cornset, 1, mplace))) # Add in coordinates of correct corner point
-          ttpos[unstuck,] <- xyFromCell(mn, ttcell[unstuck])
+          ttpos[unstuck,] <- terra::xyFromCell(mn, ttcell[unstuck])
           ttcell[unstuck] <- terra::cellFromXY(mn, ttpos[unstuck,])
         }
         # Collect results
@@ -423,19 +432,14 @@ voccTraj <- function(lonlat, # Starting points
     trajIDs[[i + 1]] <- trj_id[cells_to_keep]
     sflags <- sflags[cells_to_keep] # Adjust the flags list
     trj_id <- trj_id[cells_to_keep] # Adjust the trajectory IDs
-    print(c(i, length(onland), round(100*i/(tyr/tstep), 3), date())) # Keep a reference of progress
+    print(c(i, length(onland), round(100*i/(tyr/tstep), 3), base::date())) # Keep a reference of progress
   }
-  return(cbind(Steps = Steps %>%
-                 reduce(c),
-               lon = llon %>%
-                 reduce(c),
-               lat = llat %>%
-                 reduce(c),
-               ID = trajIDs %>%
-                 reduce(c),
-               start_cell = cellIDs %>%
-                 reduce(c),
-               end_cell = cellIDend %>%
-                 reduce(c)) %>%
-           as_tibble())
+  return(cbind(Steps = purrr::reduce(Steps, c),
+               lon = purrr::reduce(llon, c),
+               lat = purrr::reduce(llat, c),
+               ID = purrr::reduce(trajIDs, c),
+               start_cell = purrr::reduce(cellIDs, c),
+               end_cell = purrr::reduce(cellIDend, c)) %>%
+           tibble::as_tibble())
 }
+

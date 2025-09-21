@@ -15,7 +15,10 @@
 #' @param y_res Numeric. Resolution of the grid in latitude direction (degrees or km).
 #' @param tstep Numeric. Timestep for each trajectory iteration (usually decimal year).
 #' @param tyr Integer. Temporal length of the period of interest (years).
+#' @param bfr Numeric. Distance around a cell to look for a cooler/warmer cell.
 #' @param grid_resolution Character. "coarse" (default) or "fine". Controls how land crossings are handled and allows for higher resolution grids.
+#' @param seed Integer. Random seed for reproducibility. If NULL (default), no seed is set.
+#'
 #'
 #' @return a \code{tibble} containing the coordinates ("lon", "lat") of the constituent
 #' points, time step ("Steps"), identification number ("ID") for each trajectory, and cell IDs for start and end cells.
@@ -66,10 +69,17 @@ voccTraj <- function(lonlat, # Starting points
                      x_res, y_res, # Resolution of the grid at which velocity was computed
                      tstep, # Timestep (usually decimal year)
                      tyr = 20, # Number of years to run for
-                     grid_resolution = "coarse") { # Set to "fine" if you have disaggregated to original velocity field to a finer resolution
+                     bfr = 75,
+                     grid_resolution = "coarse", # Set to "fine" if you have disaggregated to original velocity field to a finer resolution
+                     seed = NULL) { # Random seed for reproducibility
 
 
   # Setup -------------------------------------------------------------------
+
+  # Set seed for reproducibility if provided
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
 
   # A base raster with original resolution and extent
   r_base <- terra::rast(res = c(x_res, y_res)) %>%
@@ -107,7 +117,20 @@ voccTraj <- function(lonlat, # Starting points
 
   # Loop --------------------------------------------------------------------
   # Loop through the trajectories
-  for (i in 1:(tyr / tstep)) { # 1:(tyr/tstep)
+  n_steps <- tyr / tstep
+  
+  # Add safety check for reasonable number of steps
+  if (n_steps > 1000) {
+    warning("Large number of trajectory steps (", n_steps, "). Consider reducing tyr or increasing tstep.")
+  }
+  
+  for (i in 1:n_steps) {
+    
+    # Safety check: if no trajectories remain, break early
+    if (nrow(lonlat) == 0) {
+      message("All trajectories terminated at step ", i-1)
+      break
+    }
 
     llold <- lonlat # Take a copy of lonlat
 
@@ -131,8 +154,10 @@ voccTraj <- function(lonlat, # Starting points
     tcells <- tcells[in_bounds]
     sflags <- sflags[in_bounds]
     trj_id <- trj_id[in_bounds]
+
     # Deal with cells that end on land
     onland <- which(is.na(vel[tcells]))
+
     if (length(onland) > 0) { # Only bother if there is at least one cell that returns a NA velocity = land
       if (grid_resolution == "fine") { #*** Fine switch
 
@@ -142,8 +167,15 @@ voccTraj <- function(lonlat, # Starting points
         SFlags <- sflags[onland]
         fcell <- fcells[onland]
         tcell <- tcells[onland]
-        ft <- data.frame(fcell = fcell, tcell = tcell, fx = purrr::pluck(fpos, 1), fy = purrr::pluck(fpos, 2), code = paste(fcell, tcell, sep = " "), ref = 1:length(fcell))
-        ttcell <- apply(ft[, 1:4], 1, get_dest_cell_fine, x_res = x_res, y_res = y_res) #*** fine switch
+
+        ft <- data.frame(fcell = fcell,
+                         tcell = tcell,
+                         fx = purrr::pluck(fpos, 1),
+                         fy = purrr::pluck(fpos, 2),
+                         code = paste(fcell, tcell, sep = " "),
+                         ref = 1:length(fcell))
+
+        ttcell <- apply(ft[, 1:4], 1, get_dest_cell_fine, x_res = x_res, y_res = y_res, bfr = bfr, vel = vel, mn = mn) #*** fine switch
 
         # Filter "stuck" flags here
         stuck <- which(is.na(ttcell)) # This is set in get_dest_cell(), where no cell in the "catchment" has a suitable sst to facilitate movement
@@ -169,6 +201,7 @@ voccTraj <- function(lonlat, # Starting points
         SFlags <- sflags[onland]
         fcell <- fcells[onland]
         tcell <- tcells[onland]
+
         # ft <- data.frame(fcell = fcell, tcell = tcell, code = paste(fcell, tcell, sep = " "), ref = 1:length(fcell))
         # ttcell <- apply(ft[,1:2], 1, get_dest_cell)
         ft <- data.frame(
@@ -177,7 +210,7 @@ voccTraj <- function(lonlat, # Starting points
           fy = fpos %>% purrr::pluck(2),
           code = paste(fcell, tcell, sep = " "), ref = 1:length(fcell)
         )
-        ttcell <- apply(ft[, 1:4], 1, get_dest_cell_coarse, x_res = x_res, y_res = y_res)
+        ttcell <- apply(ft[, 1:4], 1, get_dest_cell_coarse, x_res = x_res, y_res = y_res, bfr = bfr, vel = vel, mn = mn)
 
         # Filter "stuck" flags here
         stuck <- which(is.na(ttcell)) # This is set in get_dest_cell(), where no cell in the "catchment" has a suitable sst to facilitate movement
@@ -199,10 +232,12 @@ voccTraj <- function(lonlat, # Starting points
           corner_block_size <- 0.25 * x_res # The "corner" is set to 0.25 of the grid square at the original resolution
 
           # Send trajectory to the nearest corner of the appropriate cell, where corner is a quarter of the grid size. Position is "fuzzed" within this corner at random.
-          ttdat$e <- ttdat$loncent + (0.5 * x_res) - (stats::runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
-          ttdat$w <- ttdat$loncent - (0.5 * x_res) + (stats::runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
-          ttdat$n <- ttdat$latcent + (0.5 * y_res) - (stats::runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
-          ttdat$s <- ttdat$latcent - (0.5 * y_res) + (stats::runif(1, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
+          # Use reproducible random numbers for package checking
+          n_points <- nrow(ttdat) #TODO Check that this is still 1. Not sure why we need it.
+          ttdat$e <- ttdat$loncent + (0.5 * x_res) - (stats::runif(n_points, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
+          ttdat$w <- ttdat$loncent - (0.5 * x_res) + (stats::runif(n_points, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
+          ttdat$n <- ttdat$latcent + (0.5 * y_res) - (stats::runif(n_points, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
+          ttdat$s <- ttdat$latcent - (0.5 * y_res) + (stats::runif(n_points, -1, 1) * corner_block_size) # The centre of the "corner" +- random fuzz...
           coords <- with(ttdat, cbind(n, e, n, w, s, w, s, e)) # NE, NW, SW, SE corners' coordinates
 
           corners <- data.frame(ne = get_dist(fpos[unstuck, 2], fpos[unstuck, 1], coords[, 1], coords[, 2])) %>%
@@ -242,9 +277,16 @@ voccTraj <- function(lonlat, # Starting points
     sflags <- sflags[cells_to_keep] # Adjust the flags list
     trj_id <- trj_id[cells_to_keep] # Adjust the trajectory IDs
 
-    print(c(i, length(onland), round(100 * i / (tyr / tstep), 3), base::date())) # Keep a reference of progress
+    # Progress reporting - only in interactive sessions or when explicitly requested
+    if (interactive() && getOption("VoCC.verbose", FALSE)) {
+      message("Step ", i, "/", tyr/tstep, " (", round(100 * i / (tyr / tstep), 1), "%) - ",
+              length(onland), " cells on land - ", Sys.time())
+    }
 
   }
+  
+  # Garbage collection to free memory
+  gc()
 
   return(cbind(
     Steps = purrr::reduce(Steps, c),

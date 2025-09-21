@@ -7,13 +7,17 @@ vignette: >
   %\VignetteIndexEntry{VoCC}
   \usepackage[utf8]{inputenc}
 ---
-  
-  
+
+
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(
 collapse = TRUE,
 comment = "#>"
 )
+
+# Reduce memory usage and optimize temp file handling
+terra::terraOptions(memfrac = 0.5, tempdir = tempdir())
+
 
 # Force sequential processing to avoid parallel processing issues during package checking
 Sys.setenv("R_PARALLELLY_AVAILABLECORES_FALLBACK" = "1")
@@ -32,6 +36,7 @@ library(tidyr)
 library(data.table)
 library(terra)
 library(purrr)
+library(future)
 
 # For Plotting
 library(ggplot2)
@@ -79,8 +84,14 @@ clim <- na.omit(data.frame(terra::values(r2), cid = 1:terra::ncell(r)))
 
 clim[, c("x", "y")] <- terra::xyFromCell(r, clim$cid)
 
+
+future::plan(future::multisession, workers = parallelly::availableCores(omit = 2))
+
 # 1965-2004 (40 yr), 500 km search radius
 v <- dVoCC(clim, n = 1, tdiff = 40, method = "Single", climTol = 0.1, geoTol = 500, distfun = "GreatCircle", trans = NA, lonlat = TRUE)
+
+future::plan(future::sequential)
+
 ```
 
 Next, we extract the mean velocity estimates for each reported shift by taking the average of all grid cell values within a circle of radius equal to the reported range-shift distance. These are then used to fit the simple linear regression models of observed range shifts against climate velocity. Distance-based velocities are strictly positive by definition, so to compare like with like we change first their sign to negative where present local climates are warmer than their future analogues.
@@ -153,18 +164,18 @@ Produce the observed vs predicted scatterplots with regression lines (Fig. 2 in 
 ```{r}
 # first compare both velocities
 
-p1 <- ggplot() + 
-  geom_spatraster(data = gv[[1]]) + 
+p1 <- ggplot() +
+  geom_spatraster(data = gv[[1]]) +
   scale_fill_distiller(palette = "RdBu", direction = -1, limits = c(-50, 50)) +
   ggtitle("Gradient-based vocc") +
-  scale_x_continuous(expand = c(0,0)) + 
+  scale_x_continuous(expand = c(0,0)) +
   scale_y_continuous(expand = c(0,0))
 
-p2 <- ggplot() + 
-  geom_spatraster(data = dv[[1]]) + 
+p2 <- ggplot() +
+  geom_spatraster(data = dv[[1]]) +
   scale_fill_distiller(palette = "RdBu", direction = -1, limits = c(-20, 20)) +
   ggtitle("Distance-based vocc") +
-  scale_x_continuous(expand = c(0,0)) + 
+  scale_x_continuous(expand = c(0,0)) +
   scale_y_continuous(expand = c(0,0))
 
 wrap_plots(p1, p2, ncol = 1)
@@ -198,17 +209,17 @@ In this example we use climate velocity trajectories (based on 1960-2009 mean an
 # prepare raster layers
 vel <- gv[[1]]
 ang <- gv[[2]]
-mn <- app(r, mean, na.rm = T)
+mn <- terra::app(r, mean, na.rm = T)
 
 # generate a velocity layer centered and cropped to study region to extract the initial coordinates for the trajectories from
-x1 <- crop(gv[[1]], ext(-180, 0, -90, 90))
-x2 <- crop(gv[[1]], ext(0, 180, -90, 90))
-ext(x1) <- c(180, 360, -90, 90)
-velc <- merge(x1, x2)
+x1 <- terra::crop(gv[[1]], terra::ext(-180, 0, -90, 90))
+x2 <- terra::crop(gv[[1]], terra::ext(0, 180, -90, 90))
+terra::ext(x1) <- c(180, 360, -90, 90)
+velc <- terra::merge(x1, x2)
 
 # crop to the desired extent
 # display restricted to +180 longitude to avoid plotting issues with date line crossing
-velc <- crop(velc, c(90, 180, -32, 33))
+velc <- terra::crop(velc, c(90, 180, -32, 33))
 ```
 
 We can now populate the data frame with the cell centroid coordinates for the trajectories.
@@ -224,19 +235,24 @@ lonlat <- drop_na(lonlat)
 
 Let's calculate the trajectories with parallel processing to demonstrate how this can be used to speed things up (especially useful when dealing with fine resolutions or large extents).
 
-```{r}
+```{r voccTraj, eval=TRUE}
 
-traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, tstep = 1/12)
-
+# traj <- voccTraj(lonlat, vel, ang, mn, x_res = terra::res(vel)[1], y_res = terra::res(vel)[2], tyr = 50, tstep = 1/12, seed = 23)
+ traj <- voccTraj(lonlat, vel, ang, mn, x_res = terra::res(vel)[1], y_res = terra::res(vel)[2], tyr = 50, tstep = 1/4, seed = 23)
 ```
+
 
 Plot them over the climate velocities and the EEZ polygons from the EEZs data set (Fig. 3a in Garcia Molinos et al. 2019)
 
-```{r message=FALSE, warning=FALSE}
+```{r trajLine, eval=TRUE, message=FALSE, warning=FALSE}
 # create the spatial object with the trajectories and plot them together with the EEZ polygons
-lns <- map(traj %>% group_split(cellIDs), trajLine) %>% 
-  purrr::list_rbind() %>% 
-  sf::st_sf()
+
+future::plan(multisession, workers = parallelly::availableCores(omit = 2))
+
+lns <- trajLine(traj)
+
+future::plan(sequential)
+
 
 # Load and simplify polygons to speed plotting up
 EEZs <- sf::st_read(system.file("extdata", "EEZs.gpkg", package = "VoCCdata")) %>% 

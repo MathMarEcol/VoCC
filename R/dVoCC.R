@@ -5,7 +5,6 @@
 #' other (target) cells in the future by reference to a specified climatic threshold. The function allows for the
 #' specification of search distances and incorporates both least-cost path and Great Circle (as-the-crow-flies) distances.
 #'
-#' @importFrom foreach %dopar%
 #'
 #' @param clim \code{data.frame} with the value for the climatic parameters (columns) by cell (rows), arranged as follows (see examples below):
 #' The first 2n columns must contain the present and future values for each of the n climatic variables (V1p, V1f, V2p, V2f,...).
@@ -81,8 +80,6 @@
 dVoCC <- function(clim, n, tdiff, method = "Single", climTol, geoTol,
                   distfun = "GreatCircle", trans = NA, lonlat = TRUE) {
 
-  geoDis <- climDis <- ang <- vel <- target <- cid <- a <- NULL # Fix devtools check warnings
-
   if (distfun == "Euclidean" && lonlat == TRUE) {
     print("Error: Euclidean distances specified for unprojected coordinates")
     stop()
@@ -99,144 +96,102 @@ dVoCC <- function(clim, n, tdiff, method = "Single", climTol, geoTol,
 
   dat <- stats::na.omit(data.table::data.table(clim))
 
+
+  # Check if column cid (cell ID exists)
+  if (!"cid" %in% names(dat)) {
+    dat <- dat %>%
+      dplyr::mutate(cid = dplyr::row_number())
+  }
+
+  result <- dat %>%
+    dplyr::group_split(.data$cid) %>%
+    furrr::future_map(pdVoCC,
+                      n = n,
+                      tdiff = tdiff,
+                      method = method,
+                      climTol = climTol,
+                      geoTol = geoTol,
+                      distfun = distfun,
+                      trans = trans,
+                      lonlat = lonlat,
+                      .options = furrr::furrr_options(seed = TRUE),
+                      .progress = TRUE) %>%
+    purrr::list_rbind()
+
+  return(result)
+
+}
+
+
+
+#' Run parallel dVoCC
+#'
+#' @noRd
+pdVoCC <- function(dat, n, tdiff, method = "Single", climTol, geoTol,
+                   distfun = "GreatCircle", trans = NA, lonlat = TRUE) {
+
+  geoDis <- climDis <- ang <- vel <- target <- cid <- a <- NULL # Fix devtools check warnings
+
+  # Ensure dat is a data.table (dplyr::group_split converts to data.frame)
+  dat <- data.table::as.data.table(dat)
+
+  result <- data.table::data.table(
+    focal = dat$cid,
+    target = as.integer(NA),
+    climDis = as.double(NA),
+    geoDis = as.double(NA),
+    ang = as.double(NA),
+    vel = as.double(NA)
+  )
+
   # matrix with the future climatic values for all cells
   fut <- dat[, seq(2, (2 * n), by = 2), with = FALSE]
 
-  # Determine optimal number of cores, ensuring we don't exceed data rows
-  ncores <- parallelly::availableCores(constraints = "connections", omit = 2)
-  ncores <- min(ncores, nrow(dat))  # Don't use more cores than data rows
-  ncores <- max(ncores, 1)          # Ensure at least 1 core
+  for (i in seq_len(nrow(dat))) {
 
-  # Only use parallel processing if we have multiple cores and sufficient data
-  if (ncores > 1 && nrow(dat) > ncores) {
-    cuts <- cut(seq_len(nrow(dat)), ncores, labels = FALSE)
-    cl <- parallelly::makeClusterPSOCK(ncores, autoStop = TRUE)
+    # for each focal cell subset target cell analogues (within ClimTol)
+    pres <- as.numeric(dat[i, seq(1, (2 * n), by = 2), with = FALSE])
+    dif <- data.table::data.table(sweep(fut, 2, pres, "-"))
 
-    doParallel::registerDoParallel(cl)
+    # Identify future analogue cells
+    if (method == "Single") { # Ohlemuller et al 2006 / Hamann et al 2015
+      upper <- colnames(dif)
+      l <- lapply(upper, function(x) call("<", call("abs", as.name(x)), climTol[grep(x, colnames(dif))]))
+      ii <- Reduce(function(c1, c2) substitute(.c1 & .c2, list(.c1 = c1, .c2 = c2)), l)
+      anacid <- dat$cid[dif[eval(ii), which = TRUE]] # cids analogue cells
+    }
 
-    result <- foreach::foreach(a = seq_len(ncores),
-                               .combine = rbind,
-                               .packages = c("terra", "gdistance", "geosphere", "data.table"),
-                               .multicombine = TRUE) %dopar% {
+    if (method == "Variable") { # Garcia Molinos et al. 2017
+      climTol <- as.numeric(dat[i, ((2 * n) + 1):(3 * n), with = FALSE]) # focal cell tolerance
+      upper <- colnames(dif)
+      l <- lapply(upper, function(x) call("<", call("abs", as.name(x)), climTol[grep(x, colnames(dif))]))
+      ii <- Reduce(function(c1, c2) substitute(.c1 & .c2, list(.c1 = c1, .c2 = c2)), l)
+      anacid <- dat$cid[dif[eval(ii), which = TRUE]] # cids analogue cells
+    }
 
-                                 Dat <- dat[cuts == a, ]
+    # LOCATE CLOSEST ANALOGUE
+    if (length(anacid) > 0) {
+      # check which of those are within distance and get the analogue at minimum distance
+      if (distfun == "Euclidean") {
+        d <- stats::dist(cbind(dat$x[i], dat$y[i]), cbind(dat$x[dat$cid %in% anacid], dat$y[dat$cid %in% anacid]))
+      } # in x/y units
+      if (distfun == "GreatCircle") {
+        d <- (geosphere::distHaversine(cbind(dat$x[i], dat$y[i]), cbind(dat$x[dat$cid %in% anacid], dat$y[dat$cid %in% anacid]))) / 1000
+      } # in km
 
-                                 resu <- data.table::data.table(
-                                   focal = Dat$cid,
-                                   target = as.integer(NA),
-                                   climDis = as.double(NA),
-                                   geoDis = as.double(NA),
-                                   ang = as.double(NA),
-                                   vel = as.double(NA)
-                                 )
-
-                                 i <- 0
-                                 while (i <= nrow(Dat)) {
-                                   i <- i + 1
-
-                                   # for each focal cell subset target cell analogues (within ClimTol)
-                                   pres <- as.numeric(Dat[i, seq(1, (2 * n), by = 2), with = FALSE])
-                                   dif <- data.table::data.table(sweep(fut, 2, pres, "-"))
-
-                                   # Identify future analogue cells
-                                   if (method == "Single") { # Ohlemuller et al 2006 / Hamann et al 2015
-                                     upper <- colnames(dif)
-                                     l <- lapply(upper, function(x) call("<", call("abs", as.name(x)), climTol[grep(x, colnames(dif))]))
-                                     ii <- Reduce(function(c1, c2) substitute(.c1 & .c2, list(.c1 = c1, .c2 = c2)), l)
-                                     anacid <- dat$cid[dif[eval(ii), which = TRUE]] # cids analogue cells
-                                   }
-
-                                   if (method == "Variable") { # Garcia Molinos et al. 2017
-                                     climTol <- as.numeric(Dat[i, ((2 * n) + 1):(3 * n), with = FALSE]) # focal cell tolerance
-                                     upper <- colnames(dif)
-                                     l <- lapply(upper, function(x) call("<", call("abs", as.name(x)), climTol[grep(x, colnames(dif))]))
-                                     ii <- Reduce(function(c1, c2) substitute(.c1 & .c2, list(.c1 = c1, .c2 = c2)), l)
-                                     anacid <- dat$cid[dif[eval(ii), which = TRUE]] # cids analogue cells
-                                   }
-
-                                   # LOCATE CLOSEST ANALOGUE
-                                   if (length(anacid) > 0) {
-                                     # check which of those are within distance and get the analogue at minimum distance
-                                     if (distfun == "Euclidean") {
-                                       d <- stats::dist(cbind(Dat$x[i], Dat$y[i]), cbind(dat$x[dat$cid %in% anacid], dat$y[dat$cid %in% anacid]))
-                                     } # in x/y units
-                                     if (distfun == "GreatCircle") {
-                                       d <- (geosphere::distHaversine(cbind(Dat$x[i], Dat$y[i]), cbind(dat$x[dat$cid %in% anacid], dat$y[dat$cid %in% anacid]))) / 1000
-                                     } # in km
-
-                                     # LeastCost distances not supported - error is thrown at function start
-
-                                     an <- anacid[d < geoTol] # cids analogue cells within search radius
-                                     dis <- d[d < geoTol] # distance to candidate analogues
-                                     if (length(an) > 0) {
-                                       resu[i, target := an[which.min(dis)]] # cid of geographically closest climate analogue
-                                       if (method == "Single") {
-                                         resu[i, climDis := mean(as.numeric(dif[which(anacid == resu[i, target]), ]))]
-                                       } # mean clim difference for the closest analogue
-                                       resu[i, geoDis := min(dis)]
-                                       resu[i, ang := geosphere::bearing(Dat[i, c("x", "y")], dat[cid == resu[i, target], c("x", "y")])]
-                                       resu[i, vel := resu$geoDis[i] / tdiff]
-                                     }
-                                   }
-                                 }
-                                 return(resu)
-                               }
-  } else {
-    # Sequential processing for small datasets or limited cores
-    result <- data.table::data.table(
-      focal = dat$cid,
-      target = as.integer(NA),
-      climDis = as.double(NA),
-      geoDis = as.double(NA),
-      ang = as.double(NA),
-      vel = as.double(NA)
-    )
-
-    for (i in seq_len(nrow(dat))) {
-      # for each focal cell subset target cell analogues (within ClimTol)
-      pres <- as.numeric(dat[i, seq(1, (2 * n), by = 2), with = FALSE])
-      dif <- data.table::data.table(sweep(fut, 2, pres, "-"))
-
-      # Identify future analogue cells
-      if (method == "Single") { # Ohlemuller et al 2006 / Hamann et al 2015
-        upper <- colnames(dif)
-        l <- lapply(upper, function(x) call("<", call("abs", as.name(x)), climTol[grep(x, colnames(dif))]))
-        ii <- Reduce(function(c1, c2) substitute(.c1 & .c2, list(.c1 = c1, .c2 = c2)), l)
-        anacid <- dat$cid[dif[eval(ii), which = TRUE]] # cids analogue cells
-      }
-
-      if (method == "Variable") { # Garcia Molinos et al. 2017
-        climTol <- as.numeric(dat[i, ((2 * n) + 1):(3 * n), with = FALSE]) # focal cell tolerance
-        upper <- colnames(dif)
-        l <- lapply(upper, function(x) call("<", call("abs", as.name(x)), climTol[grep(x, colnames(dif))]))
-        ii <- Reduce(function(c1, c2) substitute(.c1 & .c2, list(.c1 = c1, .c2 = c2)), l)
-        anacid <- dat$cid[dif[eval(ii), which = TRUE]] # cids analogue cells
-      }
-
-      # LOCATE CLOSEST ANALOGUE
-      if (length(anacid) > 0) {
-        # check which of those are within distance and get the analogue at minimum distance
-        if (distfun == "Euclidean") {
-          d <- stats::dist(cbind(dat$x[i], dat$y[i]), cbind(dat$x[dat$cid %in% anacid], dat$y[dat$cid %in% anacid]))
-        } # in x/y units
-        if (distfun == "GreatCircle") {
-          d <- (geosphere::distHaversine(cbind(dat$x[i], dat$y[i]), cbind(dat$x[dat$cid %in% anacid], dat$y[dat$cid %in% anacid]))) / 1000
-        } # in km
-
-        an <- anacid[d < geoTol] # cids analogue cells within search radius
-        dis <- d[d < geoTol] # distance to candidate analogues
-        if (length(an) > 0) {
-          result[i, target := an[which.min(dis)]] # cid of geographically closest climate analogue
-          if (method == "Single") {
-            result[i, climDis := mean(as.numeric(dif[which(anacid == result[i, target]), ]))]
-          } # mean clim difference for the closest analogue
-          result[i, geoDis := min(dis)]
-          result[i, ang := geosphere::bearing(dat[i, c("x", "y")], dat[cid == result[i, target], c("x", "y")])]
-          result[i, vel := result$geoDis[i] / tdiff]
-        }
+      an <- anacid[d < geoTol] # cids analogue cells within search radius
+      dis <- d[d < geoTol] # distance to candidate analogues
+      if (length(an) > 0) {
+        result[i, target := an[which.min(dis)]] # cid of geographically closest climate analogue
+        if (method == "Single") {
+          result[i, climDis := mean(as.numeric(dif[which(anacid == result[i, target]), ]))]
+        } # mean clim difference for the closest analogue
+        result[i, geoDis := min(dis)]
+        result[i, ang := geosphere::bearing(dat[i, c("x", "y")], dat[cid == result[i, target], c("x", "y")])]
+        result[i, vel := result$geoDis[i] / tdiff]
       }
     }
-  }
+  } # End of the loop
 
   return(result)
 }

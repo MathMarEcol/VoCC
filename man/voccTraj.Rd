@@ -4,7 +4,19 @@
 \alias{voccTraj}
 \title{Climate velocity trajectories}
 \usage{
-voccTraj(lonlat, vel, ang, mn, tstep, tyr = 50)
+voccTraj(
+  lonlat,
+  vel,
+  ang,
+  mn,
+  x_res,
+  y_res,
+  tstep,
+  tyr = 20,
+  bfr = 75,
+  grid_resolution = "coarse",
+  seed = NULL
+)
 }
 \arguments{
 \item{lonlat}{\code{data.frame} with the longitude and latitude (in decimal degrees)
@@ -16,11 +28,23 @@ of the points to project.}
 
 \item{mn}{\code{raster} with the overall mean climatic value over the period of interest.}
 
-\item{tyr}{\code{integer} temporal length of the period of interest.}
+\item{x_res}{Numeric. Resolution of the grid in longitude direction (degrees or km).}
+
+\item{y_res}{Numeric. Resolution of the grid in latitude direction (degrees or km).}
+
+\item{tstep}{Numeric. Timestep for each trajectory iteration (usually decimal year).}
+
+\item{tyr}{Integer. Temporal length of the period of interest (years).}
+
+\item{bfr}{Numeric. Distance around a cell to look for a cooler/warmer cell.}
+
+\item{grid_resolution}{Character. "coarse" (default) or "fine". Controls how land crossings are handled and allows for higher resolution grids.}
+
+\item{seed}{Integer. Random seed for reproducibility. If NULL (default), no seed is set.}
 }
 \value{
-a \code{data.frame} containing the coordinates ("x", "y") of the constituent
-points and identification number ("trajIDs") for each trajectory.
+a \code{tibble} containing the coordinates ("lon", "lat") of the constituent
+points, time step ("Steps"), identification number ("ID") for each trajectory, and cell IDs for start and end cells.
 }
 \description{
 Function to calculate vocc trajectories after Burrows et al (2014). Trajectories

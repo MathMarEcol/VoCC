@@ -24,15 +24,18 @@ Function to calculate VoCC-based residence time of isotherms within a polygon af
 \examples{
 
 # Load example Exclusive Economic Zone polygon
-\dontrun{
-EEZ <- VoCC_get_data("EEZ.gpkg")
-HSST <- VoCC_get_data("HSST.tif")
+
+EEZ <- terra::vect(system.file("extdata", "EEZ.gpkg", package = "VoCC"))
+
+HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata")) \%>\%
+  terra::crop(terra::ext(EEZ))
 
 yrSST <- sumSeries(HSST,
   p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
   fun = function(x) colMeans(x, na.rm = TRUE),
   freqin = "months", freqout = "years"
 )
+
 tr <- tempTrend(yrSST, th = 10)
 sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
 v <- gVoCC(tr, sg)
@@ -47,23 +50,20 @@ a2 <- resTime(EEZ, vel, areapg = as.numeric(as.numeric(levels(EEZ$Area_km2))[EEZ
 a2
 
 # Using a user defined polygon
-x_coord <- c(-28, -20, -20.3, -25.5)
-y_coord <- c(60, 61, 63, 62)
+x_coord <- c(-28, -20, -20.3, -25.5, -28)
+y_coord <- c(60, 61, 63, 62, 60)
 coords <- matrix(c(x_coord, y_coord), ncol = 2)
 poly_sf <- sf::st_sf(geometry = sf::st_sfc(sf::st_polygon(list(coords))))
 a3 <- resTime(poly_sf, vel, areapg = NA)
 
 terra::plot(vel)
-plot(sf::st_geometry(EEZ), add = TRUE)
+terra::plot(EEZ, add = TRUE)
 plot(sf::st_geometry(poly_sf), add = TRUE)
-}
+
 }
 \references{
 \href{https://www.nature.com/articles/nature08649}{Loarie et al. 2009}. The velocity of climate change. Nature, 462, 1052-1055.
 }
 \seealso{
 {\code{\link{gVoCC}}}
-}
-\author{
-Jorge Garcia Molinos
 }

@@ -58,8 +58,8 @@ other (target) cells in the future by reference to a specified climatic threshol
 specification of search distances and incorporates both least-cost path and Great Circle (as-the-crow-flies) distances.
 }
 \examples{
-\dontrun{
-JapTC <- VoCC_get_data("JapTC.tif")
+
+JapTC <- terra::rast(system.file("extdata", "JapTC.tif", package = "VoCC"))
 
 # Create a data frame with the necessary variables in the required order
 clim <- stats::na.omit(data.frame(terra::values(JapTC), cid = 1:terra::ncell(JapTC)))
@@ -75,6 +75,7 @@ r1 <- JapTC[[1]]
 r1[avocc1$focal] <- avocc1$vel
 terra::plot(r1)
 
+\dontrun{
 # Cell-specific, distance-unrestricted climate analogue velocity based on least-cost path distances
 # First, create the conductance matrix (all land cells considered to have conductance of 1)
 r <- JapTC[[1]]
@@ -103,7 +104,4 @@ terra::plot(c(r1, r2))
 }
 \seealso{
 {\code{\link{climPCA}}, \code{\link{climPlot}}}
-}
-\author{
-Jorge Garcia Molinos
 }

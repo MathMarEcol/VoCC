@@ -15,19 +15,21 @@
 #' @seealso{\code{\link{gVoCC}}}
 #'
 #' @export
-#' @author Jorge Garcia Molinos
 #' @examples
 #'
 #' # Load example Exclusive Economic Zone polygon
-#' \dontrun{
-#' EEZ <- VoCC_get_data("EEZ.gpkg")
-#' HSST <- VoCC_get_data("HSST.tif")
+#'
+#' EEZ <- terra::vect(system.file("extdata", "EEZ.gpkg", package = "VoCC"))
+#'
+#' HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata")) %>%
+#'   terra::crop(terra::ext(EEZ))
 #'
 #' yrSST <- sumSeries(HSST,
 #'   p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
 #'   fun = function(x) colMeans(x, na.rm = TRUE),
 #'   freqin = "months", freqout = "years"
 #' )
+#'
 #' tr <- tempTrend(yrSST, th = 10)
 #' sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
 #' v <- gVoCC(tr, sg)
@@ -42,16 +44,16 @@
 #' a2
 #'
 #' # Using a user defined polygon
-#' x_coord <- c(-28, -20, -20.3, -25.5)
-#' y_coord <- c(60, 61, 63, 62)
+#' x_coord <- c(-28, -20, -20.3, -25.5, -28)
+#' y_coord <- c(60, 61, 63, 62, 60)
 #' coords <- matrix(c(x_coord, y_coord), ncol = 2)
 #' poly_sf <- sf::st_sf(geometry = sf::st_sfc(sf::st_polygon(list(coords))))
 #' a3 <- resTime(poly_sf, vel, areapg = NA)
 #'
 #' terra::plot(vel)
-#' plot(sf::st_geometry(EEZ), add = TRUE)
+#' terra::plot(EEZ, add = TRUE)
 #' plot(sf::st_geometry(poly_sf), add = TRUE)
-#' }
+#'
 resTime <- function(pg, vel, areapg = NA) {
 
   resTim <- v <- d <- NULL # Fix devtools check warnings
@@ -72,12 +74,12 @@ resTime <- function(pg, vel, areapg = NA) {
 
   # Extract velocity values using terra::vect for efficiency
   extracted_values <- terra::extract(vel, pg_vect, fun = mean, na.rm = TRUE)
-  
+
   # Handle case where extraction returns NULL or empty results
   if (is.null(extracted_values) || nrow(extracted_values) == 0) {
     stop("No values could be extracted from the raster. Check that polygons overlap with the raster and have the same coordinate system.")
   }
-  
+
   # Extract the mean values, handling potential column name variations
   if ("mean" %in% names(extracted_values)) {
     RT[, v := extracted_values$mean]

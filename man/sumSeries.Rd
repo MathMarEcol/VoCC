@@ -45,10 +45,10 @@ apply some summary function. It is mainly a wrapper from the \code{apply.} funct
 in the package xts (Ryan and Ulrich 2017).
 }
 \examples{
-\dontrun{
+
 # Monthly mean SST (HadISST) data for Europe Jan-1950 to Dec-2010
 
-HSST <- VoCC_get_data("HSST.tif")
+HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata"))
 
 # Calculate mean annual monthly SST
 
@@ -83,14 +83,10 @@ meanJASST <- sumSeries(HSST,
   p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
   fun = myf, freqin = "months", freqout = "other"
 )
-}
 
 }
 \references{
 \href{https://CRAN.R-project.org/package=xts}{Ray and Ulrich. 2017}. xts: eXtensible Time Series. R package version 0.10-1. \cr
 \href{https://CRAN.R-project.org/package=matrixStats}{Bengtsson 2018}. matrixStats: Functions that Apply to Rows and Columns
 of Matrices (and to Vectors). R package version 0.53.1.
-}
-\author{
-Jorge Garcia Molinos
 }

@@ -9,12 +9,9 @@ angulo(dx, dy)
 \arguments{
 \item{dx}{\code{numeric} giving the longitudinal gradient component}
 
-\item{dy}{\code{numeric} giving the latitudinal gradient component}
+\item{dy}{\code{numeric} giving the latitudinal gradient component
+angulo()}
 }
 \description{
 Internal. Angle associated to the spatial gradient
-}
-\author{
-Jorge Garcia Molinos and David S. Schoeman
-angulo()
 }

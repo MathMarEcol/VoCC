@@ -71,8 +71,12 @@ and (5) convergence cells identified from the remaining cells as those where few
 cell, respectively.
 }
 \examples{
+
 \dontrun{
-HSST <- VoCC_get_data("HSST.tif")
+EEZ <- terra::vect(system.file("extdata", "EEZ.gpkg", package = "VoCC"))
+
+HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata")) \%>\%
+  terra::crop(terra::ext(EEZ) + 10)
 
 # input raster layers
 yrSST <- sumSeries(HSST,
@@ -88,16 +92,13 @@ vel <- v[[1]]
 ang <- v[[2]]
 
 # Get the set of starting cells for the trajectories and calculate trajectories
-# at 1/4-deg resolution (16 trajectories per 1-deg cell)
-mnd <- terra::disagg(mn, 4)
-veld <- terra::disagg(vel, 4)
-angd <- terra::disagg(ang, 4)
 lonlat <- stats::na.omit(data.frame(
-  terra::xyFromCell(veld, 1:terra::ncell(veld)),
-  terra::values(veld), terra::values(angd), terra::values(mnd)
+  terra::xyFromCell(vel, 1:terra::ncell(vel)),
+  terra::values(vel), terra::values(ang), terra::values(mn)
 ))[, 1:2]
 
-traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
+traj <- voccTraj(lonlat, vel, ang, mn, tstep = 1/4, tyr = 20, seed = 23)
+
 
 # Generate the trajectory-based classification
 clas <- trajClas(traj, vel, ang, mn,
@@ -105,33 +106,19 @@ clas <- trajClas(traj, vel, ang, mn,
   Nend = 45, Nst = 15, NFT = 70, DateLine = FALSE
 )
 
-# Define first the colour palette for the full set of categories
-my_col <- c(
-  "gainsboro", "darkseagreen1", "coral4", "firebrick2", "mediumblue", "darkorange1",
-  "magenta1", "cadetblue1", "yellow1"
-)
-# Keep only the categories present in our raster
-my_col <- my_col[sort(unique(terra::values(clas[[7]])))]
-
 # Classify raster / build attribute table
 clasr <- terra::as.factor(clas[[7]])
 rat_r <- data.frame(ID = sort(unique(terra::values(clas[[7]]))),
                     trajcat = c("N-M", "S-M", "IS", "BS", "Srce",
                                "RS", "Cor", "Div", "Con")[sort(unique(terra::values(clas[[7]])))])
-terra::cats(clasr) <- rat_r
-# Produce the plot using the rasterVis levelplot function
-rasterVis::levelplot(clasr,
-  col.regions = my_col,
-  xlab = NULL, ylab = NULL, scales = list(draw = FALSE)
-)
+levels(clasr) <- rat_r
+terra::plot(clasr)
 }
+
 }
 \references{
 \href{https://www.nature.com/articles/nature12976}{Burrows et al. 2014}. Geographical limits to species-range shifts are suggested by climate velocity. Nature, 507, 492-495.
 }
 \seealso{
 {\code{\link{voccTraj}}}
-}
-\author{
-Jorge Garcia Molinos
 }

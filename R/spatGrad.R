@@ -16,7 +16,8 @@
 #' (Grad in C per km for unprojected rasters and C per spatial unit for projected rasters),
 #' and the associated angle (Ang in degrees).
 #'
-#' @references \href{http://science.sciencemag.org/content/334/6056/652}{Burrows et al. 2011}. The pace of shifting climate in marine and terrestrial ecosystems. Science, 334, 652-655.
+#' @references \href{http://science.sciencemag.org/content/334/6056/652}{Burrows et al. 2011}.
+#' The pace of shifting climate in marine and terrestrial ecosystems. Science, 334, 652-655.
 #'
 #' @seealso{\code{\link{tempTrend}}, \code{\link{gVoCC}}}
 #'
@@ -24,10 +25,9 @@
 #' @importFrom stats na.omit
 #'
 #' @export
-#' @author Jorge Garcia Molinos, David S. Schoeman, and Michael T. Burrows
 #' @examples
-#' \dontrun{
-#' HSST <- VoCC_get_data("HSST.tif")
+#'
+#' HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata"))
 #'
 #' yrSST <- sumSeries(HSST,
 #'   p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
@@ -39,15 +39,16 @@
 #' sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
 #'
 #' terra::plot(sg)
-#' }
 #'
 spatGrad <- function(r, th = -Inf, projected = FALSE) {
 
   # Fix devtools check warnings
   "." <- NULL
-  gradNS1 <- gradNS2 <- gradNS3 <- gradNS4 <- gradNS5 <- gradNS6 <- gradWE1 <- gradWE2 <- gradWE3 <- gradWE4 <- gradWE5 <- gradWE6 <- NULL
+  gradNS1 <- gradNS2 <- gradNS3 <- gradNS4 <- gradNS5 <- gradNS6 <- NULL
+  gradWE1 <- gradWE2 <- gradWE3 <- gradWE4 <- gradWE5 <- gradWE6 <- NULL
   sy <- sx <- NSgrad <- WEgrad <- NULL
-  clim <- climE <- climN <- climNE <- climNW <- climS <- climSE <- climSW <- climW <- climFocal <- NULL
+  clim <- climE <- climN <- climNE <- climNW <- NULL
+  climS <- climSE <- climSW <- climW <- climFocal <- NULL
   to <- code <- i.to <- LAT <- angle <- Grad <- .SD <- NULL
 
   if (terra::nlyr(r) > 1) {
@@ -57,12 +58,20 @@ spatGrad <- function(r, th = -Inf, projected = FALSE) {
   # get resolution of the raster
   re <- terra::res(r)
 
+  # OPTIMIZATION: Pre-extract raster values once to avoid repeated calls
+  spatRaster_values <- terra::values(r)
+  n_cells <- terra::ncell(r)
+
+  # OPTIMIZATION: Pre-calculate row and column indices to avoid repeated terra calls
+  row_indices <- terra::rowFromCell(r, 1:n_cells)
+  col_indices <- terra::colFromCell(r, 1:n_cells)
+
   # Create a columns for focal and each of its 8 adjacent cells
   y <- data.table::data.table(terra::adjacent(r, 1:terra::ncell(r), directions = 8, pairs = TRUE))
-  y <- na.omit(y[, climFocal := terra::values(r)[from]][order(from, to)]) # Get value for focal cell, order the table by raster sequence and omit NAs (land cells)
-  y[, clim := terra::values(r)[to]] # Insert values for adjacent cells
-  y[, sy := terra::rowFromCell(r, from) - terra::rowFromCell(r, to)] # Column to identify rows in the raster (N = 1, mid = 0, S = -1)
-  y[, sx := terra::colFromCell(r, to) - terra::colFromCell(r, from)] # Same for columns (E = 1, mid = 0, W = -1)
+  y <- na.omit(y[, climFocal := spatRaster_values[from]][order(from, to)]) # OPTIMIZED: Use pre-extracted values
+  y[, clim := spatRaster_values[to]] # OPTIMIZED: Use pre-extracted values
+  y[, sy := row_indices[from] - row_indices[to]] # Column to identify rows in the raster (N = 1, mid = 0, S = -1)
+  y[, sx := col_indices[to] - col_indices[from]] # Same for columns (E = 1, mid = 0, W = -1)
   y[sx > 1, sx := -1] # Sort out the W-E wrap at the dateline, part I
   y[sx < -1, sx := 1] # Sort out the W-E wrap at the dateline, part II
   y[, code := paste0(sx, sy)] # Make a unique code for each of the eight neighbouring cells
@@ -72,8 +81,11 @@ spatGrad <- function(r, th = -Inf, projected = FALSE) {
       to = c("climE", "climW", "climNW", "climSW", "climNE", "climSE", "climN", "climS")),
     on = "code", code := i.to]
   y <- data.table::dcast(y[, c("from", "code", "clim")], from ~ code, value.var = "clim")
-  y[, climFocal := terra::values(r)[from]] # Put climFocal back in
-  y[, LAT := terra::yFromCell(r, from)] # Add focal cell latitude
+  y[, climFocal := spatRaster_values[from]] # OPTIMIZED: Use pre-extracted values
+
+  # OPTIMIZATION: Pre-calculate latitude values to avoid repeated terra calls
+  lat_values <- terra::yFromCell(r, 1:n_cells)
+  y[, LAT := lat_values[from]] # Add focal cell latitude using pre-calculated values
 
   # Calculate individual spatial temperature gradients: grads (degC per km)
   # WE gradients difference in temperatures for each western and eastern pairs divided by the distance between the cells in each pair (corrected for  latitudinal distortion if unprojected)
@@ -99,19 +111,49 @@ spatGrad <- function(r, th = -Inf, projected = FALSE) {
   y[, gradNS5 := (climFocal - climS) / (d * re[2])]
   y[, gradNS6 := (climE - climSE) / (d * re[2])]
 
-  # Calulate NS and WE gradients.
+  # OPTIMIZATION: Vectorized weighted mean calculations instead of apply()
+  # Calculate NS and WE gradients using vectorized operations
   # NOTE: for angles to work (at least using simple positive and negative values on Cartesian axes),
   # S-N & W-E gradients need to be positive)
-  y[, WEgrad := apply(.SD, 1, function(x) stats::weighted.mean(x, c(1, 2, 1, 1, 2, 1), na.rm = TRUE)), .SDcols = 12:17]
-  y[, NSgrad := apply(.SD, 1, function(x) stats::weighted.mean(x, c(1, 2, 1, 1, 2, 1), na.rm = TRUE)), .SDcols = 18:23]
+
+  # Extract gradient matrices for vectorized operations
+  WE_gradients <- as.matrix(y[, .(gradWE1, gradWE2, gradWE3, gradWE4, gradWE5, gradWE6)])
+  NS_gradients <- as.matrix(y[, .(gradNS1, gradNS2, gradNS3, gradNS4, gradNS5, gradNS6)])
+
+  # Vectorized weighted mean calculation
+  weights <- c(1, 2, 1, 1, 2, 1)
+
+  # Calculate weighted means with proper NA handling (equivalent to na.rm = TRUE)
+  # Replace NA values with 0 for matrix multiplication, but track valid values
+  WE_valid <- !is.na(WE_gradients)
+  NS_valid <- !is.na(NS_gradients)
+
+  # Create matrices with NAs replaced by 0 for calculation
+  WE_clean <- WE_gradients
+  NS_clean <- NS_gradients
+  WE_clean[!WE_valid] <- 0
+  NS_clean[!NS_valid] <- 0
+
+  # Calculate weighted sums only for valid (non-NA) values
+  WE_weighted_sums <- rowSums(WE_clean * rep(weights, each = nrow(WE_clean)))
+  NS_weighted_sums <- rowSums(NS_clean * rep(weights, each = nrow(NS_clean)))
+
+  # Calculate sum of weights for valid values only
+  WE_weight_sums <- rowSums(WE_valid * rep(weights, each = nrow(WE_valid)))
+  NS_weight_sums <- rowSums(NS_valid * rep(weights, each = nrow(NS_valid)))
+
+  # Calculate weighted means (equivalent to stats::weighted.mean with na.rm = TRUE)
+  y[, WEgrad := ifelse(WE_weight_sums > 0, WE_weighted_sums / WE_weight_sums, NA_real_)]
+  y[, NSgrad := ifelse(NS_weight_sums > 0, NS_weighted_sums / NS_weight_sums, NA_real_)]
+
   y[is.na(WEgrad) & !is.na(NSgrad), WEgrad := 0L] # Where NSgrad does not exist, but WEgrad does, make NSgrad 0
   y[!is.na(WEgrad) & is.na(NSgrad), NSgrad := 0L] # same the other way around
 
   # Calculate angles of gradients (degrees) - adjusted for quadrant (0 deg is North)
   y[, angle := angulo(.SD$WEgrad, .SD$NSgrad), .SDcols = c("WEgrad", "NSgrad")]
 
-  # Calculate the vector sum of gradients (C/km)
-  y[, Grad := sqrt(apply(cbind((y$WEgrad^2), (y$NSgrad^2)), 1, sum, na.rm = TRUE))]
+  # OPTIMIZATION: Vectorized magnitude calculation instead of apply()
+  y[, Grad := sqrt(WEgrad^2 + NSgrad^2)]
 
   # Merge the reduced file back into the main file to undo the initial na.omit
   from <- data.table::data.table(1:terra::ncell(r)) # Make ordered from cells
@@ -121,6 +163,13 @@ spatGrad <- function(r, th = -Inf, projected = FALSE) {
   rAng[y$from] <- y$angle
   rGrad[y$from] <- y$Grad
   rGrad[rGrad[] < th] <- th
+
+  # MEMORY LEAK FIX: Clean up large intermediate objects
+  rm(spatRaster_values, lat_values, row_indices, col_indices,
+     WE_gradients, NS_gradients, WE_clean, NS_clean,
+     WE_valid, NS_valid, WE_weighted_sums, NS_weighted_sums,
+     WE_weight_sums, NS_weight_sums, y, from)
+
   output <- c(rGrad, rAng)
   names(output) <- c("Grad", "Ang")
 

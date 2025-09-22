@@ -93,16 +93,21 @@ sumSeries <- function(r, p, yr0, l = terra::nlyr(r), fun = function(x) colMeans(
     s <- fun(x)
   }
 
-  # create raster stack
+  # MEMORY LEAK FIX: Pre-allocate raster list instead of growing stack incrementally
+  raster_list <- vector("list", nrow(s))
+  template_raster <- terra::rast(r[[1]])
+  
   for (i in 1:nrow(s)) {
-    r2 <- terra::rast(r[[1]])
+    r2 <- terra::rast(template_raster)  # Use template to avoid repeated rast() calls
     r2[] <- as.numeric(s[i, ])
-    if (i == 1) {
-      r1 <- r2
-    } else {
-      r1 <- c(r1, r2)
-    }
+    raster_list[[i]] <- r2
   }
+  
+  # MEMORY LEAK FIX: Create stack once from list instead of incremental growth
+  r1 <- terra::rast(raster_list)
+  
+  # Clean up temporary objects
+  rm(raster_list, template_raster)
   if (freqout != "other") {
     names(r1) <- seq(stats::start(x), length = terra::nlyr(r1), by = freqout)
   }

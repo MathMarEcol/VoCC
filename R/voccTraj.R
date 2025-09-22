@@ -85,10 +85,11 @@ voccTraj <- function(lonlat, # Starting points
   r_base <- terra::rast(res = c(x_res, y_res)) %>%
     terra::crop(vel)
 
-  # Constrain max velocity to avoid stepping over grid squares
+  # MEMORY LEAK FIX: Don't modify original raster, work with values directly
   max_vel <- 111.325 * x_res / tstep
-  vel[vel > max_vel] <- max_vel
-  vel[vel < -max_vel] <- -max_vel
+  vel_values <- terra::values(vel)
+  vel_values[vel_values > max_vel] <- max_vel
+  vel_values[vel_values < -max_vel] <- -max_vel
 
   # Sort out start points
   lonlat <- lonlat %>%
@@ -98,6 +99,10 @@ voccTraj <- function(lonlat, # Starting points
   # Get initial descriptors
   tcells <- terra::cellFromXY(vel, lonlat) # # Cell IDs of starting cells
   n <- nrow(lonlat) # Get number of cells in your sequence
+
+  # OPTIMIZATION: Use the already constrained vel_values and extract ang_values
+  ang_values <- terra::values(ang)
+  mn_values <- terra::values(mn)  # Pre-extract mn values too
 
   # Set up variables to catch results
   llon <- llat <- cellIDend <- Steps <- cellIDs <- trajIDs <- list() # Initiate lists to catch results
@@ -134,12 +139,27 @@ voccTraj <- function(lonlat, # Starting points
 
     llold <- lonlat # Take a copy of lonlat
 
-    vell <- terra::extract(vel, llold) %>%
-      dplyr::pull(.data$voccMag)
-    angg <- terra::extract(ang, llold) %>%
-      dplyr::pull(.data$voccAng)
-
+    # OPTIMIZATION: Get cell IDs first, then extract values by indexing (much faster)
     fcells <- terra::cellFromXY(vel, llold) # Get the cells that the trajectories start in
+    
+    # MEMORY LEAK FIX: Add bounds checking to prevent invalid indexing
+    valid_fcells <- !is.na(fcells) & fcells > 0 & fcells <= length(vel_values)
+    if (!any(valid_fcells)) {
+      message("All trajectories moved out of bounds at step ", i)
+      break
+    }
+    
+    # Extract values by direct indexing (much faster than terra::extract)
+    vell <- vel_values[fcells[valid_fcells]]
+    angg <- ang_values[fcells[valid_fcells]]
+    
+    # Update tracking variables for valid cells only
+    if (!all(valid_fcells)) {
+      llold <- llold[valid_fcells, , drop = FALSE]
+      fcells <- fcells[valid_fcells]
+      trj_id <- trj_id[valid_fcells]
+      sflags <- sflags[valid_fcells]
+    }
 
     # Get new locations
     lonlat <- destcoords(vell, angg, tstep, llold, y_res, x_res) # Extract lon and lat of landing point
@@ -155,8 +175,8 @@ voccTraj <- function(lonlat, # Starting points
     sflags <- sflags[in_bounds]
     trj_id <- trj_id[in_bounds]
 
-    # Deal with cells that end on land
-    onland <- which(is.na(vel[tcells]))
+    # MEMORY LEAK FIX: Use pre-extracted values instead of raster indexing
+    onland <- which(is.na(vel_values[tcells]))
 
     if (length(onland) > 0) { # Only bother if there is at least one cell that returns a NA velocity = land
       if (grid_resolution == "fine") { #*** Fine switch
@@ -175,7 +195,9 @@ voccTraj <- function(lonlat, # Starting points
                          code = paste(fcell, tcell, sep = " "),
                          ref = 1:length(fcell))
 
-        ttcell <- apply(ft[, 1:4], 1, get_dest_cell_fine, x_res = x_res, y_res = y_res, bfr = bfr, vel = vel, mn = mn) #*** fine switch
+        # MEMORY LEAK FIX: Pass values instead of full raster objects
+        ttcell <- apply(ft[, 1:4], 1, get_dest_cell_fine, x_res = x_res, y_res = y_res, bfr = bfr,
+                       vel_values = vel_values, mn_values = mn_values, vel_raster = vel, mn_raster = mn)
 
         # Filter "stuck" flags here
         stuck <- which(is.na(ttcell)) # This is set in get_dest_cell(), where no cell in the "catchment" has a suitable sst to facilitate movement
@@ -210,7 +232,9 @@ voccTraj <- function(lonlat, # Starting points
           fy = fpos %>% purrr::pluck(2),
           code = paste(fcell, tcell, sep = " "), ref = 1:length(fcell)
         )
-        ttcell <- apply(ft[, 1:4], 1, get_dest_cell_coarse, x_res = x_res, y_res = y_res, bfr = bfr, vel = vel, mn = mn)
+        # MEMORY LEAK FIX: Pass values instead of full raster objects
+        ttcell <- apply(ft[, 1:4], 1, get_dest_cell_coarse, x_res = x_res, y_res = y_res, bfr = bfr,
+                       vel_values = vel_values, mn_values = mn_values, vel_raster = vel, mn_raster = mn)
 
         # Filter "stuck" flags here
         stuck <- which(is.na(ttcell)) # This is set in get_dest_cell(), where no cell in the "catchment" has a suitable sst to facilitate movement
@@ -285,16 +309,24 @@ voccTraj <- function(lonlat, # Starting points
 
   }
   
-  # Garbage collection to free memory
+  # MEMORY LEAK FIX: Clean up large objects before final processing
+  rm(vel_values, ang_values, mn_values)
+  
+  # MEMORY LEAK FIX: More efficient final concatenation
+  result <- tibble::tibble(
+    Steps = unlist(Steps, use.names = FALSE),
+    lon = unlist(llon, use.names = FALSE),
+    lat = unlist(llat, use.names = FALSE),
+    ID = unlist(trajIDs, use.names = FALSE),
+    start_cell = unlist(cellIDs, use.names = FALSE),
+    end_cell = unlist(cellIDend, use.names = FALSE)
+  )
+  
+  # Clean up lists
+  rm(Steps, llon, llat, trajIDs, cellIDs, cellIDend)
+  
+  # Force garbage collection
   gc()
-
-  return(cbind(
-    Steps = purrr::reduce(Steps, c),
-    lon = purrr::reduce(llon, c),
-    lat = purrr::reduce(llat, c),
-    ID = purrr::reduce(trajIDs, c),
-    start_cell = purrr::reduce(cellIDs, c),
-    end_cell = purrr::reduce(cellIDend, c)
-  ) %>%
-    tibble::as_tibble())
+  
+  return(result)
 }

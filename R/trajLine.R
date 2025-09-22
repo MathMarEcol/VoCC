@@ -55,7 +55,9 @@ trajLine <- function(x, projx = "EPSG:4326") {
 
   x %>%
     dplyr::group_split(.data$ID) %>%
-    furrr::future_map(get_trajLine, proj_x = projx, .progress = TRUE) %>%
+    furrr::future_map(get_trajLine, proj_x = projx,
+                      .options = furrr::furrr_options(seed = TRUE),
+                      .progress = TRUE) %>%
     purrr::list_rbind() %>%
     sf::st_sf()
 

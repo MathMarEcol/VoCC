@@ -26,12 +26,11 @@
 #' of Matrices (and to Vectors). R package version 0.53.1.
 #'
 #' @export
-#' @author Jorge Garcia Molinos
 #' @examples
-#' \dontrun{
+#'
 #' # Monthly mean SST (HadISST) data for Europe Jan-1950 to Dec-2010
 #'
-#' HSST <- VoCC_get_data("HSST.tif")
+#' HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata"))
 #'
 #' # Calculate mean annual monthly SST
 #'
@@ -66,7 +65,6 @@
 #'   p = "1969-01/2009-12", yr0 = "1950-01-01", l = terra::nlyr(HSST),
 #'   fun = myf, freqin = "months", freqout = "other"
 #' )
-#' }
 #'
 sumSeries <- function(r, p, yr0, l = terra::nlyr(r), fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years") {
   # construct xts object
@@ -93,23 +91,27 @@ sumSeries <- function(r, p, yr0, l = terra::nlyr(r), fun = function(x) colMeans(
     s <- fun(x)
   }
 
-  # MEMORY LEAK FIX: Pre-allocate raster list instead of growing stack incrementally
+  # MEMORY LEAK FIX: More efficient raster creation using terra::setValues
   raster_list <- vector("list", nrow(s))
   template_raster <- terra::rast(r[[1]])
-  
-  for (i in 1:nrow(s)) {
+
+  # OPTIMIZED: Vectorized raster creation
+  for (i in seq_len(nrow(s))) {
     r2 <- terra::rast(template_raster)  # Use template to avoid repeated rast() calls
-    r2[] <- as.numeric(s[i, ])
+    terra::values(r2) <- as.numeric(s[i, ])  # More efficient than r2[] <-
     raster_list[[i]] <- r2
   }
-  
+
   # MEMORY LEAK FIX: Create stack once from list instead of incremental growth
   r1 <- terra::rast(raster_list)
-  
-  # Clean up temporary objects
-  rm(raster_list, template_raster)
+
+  # Set names before cleaning up variables (x is needed for stats::start)
   if (freqout != "other") {
     names(r1) <- seq(stats::start(x), length = terra::nlyr(r1), by = freqout)
   }
+
+  # Clean up temporary objects after using them
+  rm(raster_list, template_raster, m, ts1, x, s)
+
   return(r1)
 }

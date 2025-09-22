@@ -4,6 +4,9 @@ collapse = TRUE,
 comment = "#>"
 )
 
+# Reduce memory usage and optimize temp file handling
+terra::terraOptions(memfrac = 0.5, tempdir = tempdir())
+
 # Force sequential processing to avoid parallel processing issues during package checking
 Sys.setenv("R_PARALLELLY_AVAILABLECORES_FALLBACK" = "1")
 
@@ -49,6 +52,7 @@ r2 <- c(terra::mean(r[[1:10]], na.rm = TRUE), terra::mean(r[[41:50]], na.rm = TR
 clim <- na.omit(data.frame(terra::values(r2), cid = 1:terra::ncell(r)))
 
 clim[, c("x", "y")] <- terra::xyFromCell(r, clim$cid)
+
 
 future::plan(future::multisession, workers = parallelly::availableCores(omit = 2))
 
@@ -109,50 +113,50 @@ if(!is.empty(missing_points)){
 
 ## -----------------------------------------------------------------------------
 # fit the regression models
-# Mgv <- lm(Shift^(1 / 4) ~ I((GV * 10)^(1 / 4)), data = marshift, weights = years_data)
-# summary(Mgv)
+Mgv <- lm(Shift^(1 / 4) ~ I((GV * 10)^(1 / 4)), data = marshift, weights = years_data)
+summary(Mgv)
 
 ## -----------------------------------------------------------------------------
-# Mdv <- lm(Shift^(1 / 4) ~ I((DV * 10)^(1 / 4)), data = marshift, weights = years_data)
-# summary(Mdv)
+Mdv <- lm(Shift^(1 / 4) ~ I((DV * 10)^(1 / 4)), data = marshift, weights = years_data)
+summary(Mdv)
 
 ## -----------------------------------------------------------------------------
 # first compare both velocities
 
-# p1 <- ggplot() + 
-#   geom_spatraster(data = gv[[1]]) + 
-#   scale_fill_distiller(palette = "RdBu", direction = -1, limits = c(-50, 50)) +
-#   ggtitle("Gradient-based vocc") +
-#   scale_x_continuous(expand = c(0,0)) + 
-#   scale_y_continuous(expand = c(0,0))
-# 
-# p2 <- ggplot() + 
-#   geom_spatraster(data = dv[[1]]) + 
-#   scale_fill_distiller(palette = "RdBu", direction = -1, limits = c(-20, 20)) +
-#   ggtitle("Distance-based vocc") +
-#   scale_x_continuous(expand = c(0,0)) + 
-#   scale_y_continuous(expand = c(0,0))
+p1 <- ggplot() +
+  geom_spatraster(data = gv[[1]]) +
+  scale_fill_distiller(palette = "RdBu", direction = -1, limits = c(-50, 50)) +
+  ggtitle("Gradient-based vocc") +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0))
 
-# wrap_plots(p1, p2, ncol = 1)
+p2 <- ggplot() +
+  geom_spatraster(data = dv[[1]]) +
+  scale_fill_distiller(palette = "RdBu", direction = -1, limits = c(-20, 20)) +
+  ggtitle("Distance-based vocc") +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0))
+
+wrap_plots(p1, p2, ncol = 1)
 
 
 ## -----------------------------------------------------------------------------
 # scatter plots with the resulting regression line
-# p1 <- ggplot(na.omit(marshift), aes(x = (GV * 10)^(1 / 4), y = Shift^(1 / 4))) +
-#   geom_point(color = "grey") +
-#   geom_smooth(method = lm, se = FALSE) +
-#   theme_classic() +
-#   scale_color_brewer(palette = "Accent") +
-#   labs(x = "Predicted shift (x^1/4; km/yr)", y = "Observed shift (y^1/4; km/yr)")
-# 
-# p2 <- ggplot(na.omit(marshift), aes(x = (DV * 10)^(1 / 4), y = Shift^(1 / 4))) +
-#   geom_point(color = "grey") +
-#   geom_smooth(method = lm, se = FALSE) +
-#   theme_classic() +
-#   scale_color_brewer(palette = "Accent") +
-#   labs(x = "Predicted shift (x^1/4; km/yr)", y = "Observed shift (y^1/4; km/yr)")
-# 
-# wrap_plots(p1, p2, nrow = 1)
+p1 <- ggplot(na.omit(marshift), aes(x = (GV * 10)^(1 / 4), y = Shift^(1 / 4))) +
+  geom_point(color = "grey") +
+  geom_smooth(method = lm, se = FALSE) +
+  theme_classic() +
+  scale_color_brewer(palette = "Accent") +
+  labs(x = "Predicted shift (x^1/4; km/yr)", y = "Observed shift (y^1/4; km/yr)")
+
+p2 <- ggplot(na.omit(marshift), aes(x = (DV * 10)^(1 / 4), y = Shift^(1 / 4))) +
+  geom_point(color = "grey") +
+  geom_smooth(method = lm, se = FALSE) +
+  theme_classic() +
+  scale_color_brewer(palette = "Accent") +
+  labs(x = "Predicted shift (x^1/4; km/yr)", y = "Observed shift (y^1/4; km/yr)")
+
+wrap_plots(p1, p2, nrow = 1)
 
 ## -----------------------------------------------------------------------------
 # prepare raster layers

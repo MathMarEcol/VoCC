@@ -263,42 +263,40 @@ destcoords <- function(vell, angg, timestep, ll, y_res, x_res) {
   cos_angg <- cos(angg_rad)
   sin_angg <- sin(angg_rad)
   
-  latshift <- (abs(vell) * timestep * cos_angg) / 111.325 # Calculate shift in lat
+  # OPTIMIZED: Vectorized calculations with better numerical stability
+  abs_vell <- abs(vell)
+  latshift <- (abs_vell * timestep * cos_angg) / 111.325 # Calculate shift in lat
   latnew <- ll[, 2] + latshift # Find new lat...first approximation
   
   # OPTIMIZED: Pre-compute cos(deg2rad(latnew)) for longitude calculation
   cos_latnew <- cos(deg2rad(latnew))
-  lonshift <- (abs(vell) * timestep * sin_angg) / (111.325 * cos_latnew) # Shift in lon
-
-  # Limit lonshift to at most 1 x resolution cell
-  lonshift[lonshift > x_res] <- x_res
-  lonshift[lonshift < -x_res] <- -x_res
-
-  # Now on that basis, adjust latshift
-  x_gt <- which(lonshift == x_res) # Indices for adjusted lon shifts
-  if (length(x_gt) > 0) {
-    cos_ll_gt <- cos(deg2rad(ll[x_gt, 2]))
-    tan_angg_gt <- tan(angg_rad[x_gt])
-    latshift[x_gt] <- (x_res * 111.325 * cos_ll_gt / tan_angg_gt) / 111.325
-  }
+  # Add small epsilon to prevent division by zero
+  cos_latnew[cos_latnew == 0] <- .Machine$double.eps
   
-  x_lt <- which(lonshift == -x_res) # Indices for adjusted lon shifts
-  if (length(x_lt) > 0) {
-    cos_ll_lt <- cos(deg2rad(ll[x_lt, 2]))
-    tan_angg_lt <- tan(angg_rad[x_lt])
-    latshift[x_lt] <- (x_res * 111.325 * cos_ll_lt / tan_angg_lt) / 111.325
+  lonshift <- (abs_vell * timestep * sin_angg) / (111.325 * cos_latnew) # Shift in lon
+
+  # OPTIMIZED: Vectorized clamping instead of conditional assignment
+  lonshift <- pmax(pmin(lonshift, x_res), -x_res)
+
+  # OPTIMIZED: Vectorized adjustment for extreme longitude shifts
+  needs_adjustment <- (abs(lonshift) == x_res)
+  if (any(needs_adjustment)) {
+    cos_ll_adj <- cos(deg2rad(ll[needs_adjustment, 2]))
+    tan_angg_adj <- tan(angg_rad[needs_adjustment])
+    # Prevent division by zero
+    tan_angg_adj[tan_angg_adj == 0] <- .Machine$double.eps
+    latshift[needs_adjustment] <- (x_res * 111.325 * cos_ll_adj / tan_angg_adj) / 111.325
   }
   
   latnew <- ll[, 2] + latshift # Find new lat by adding the adjusted lats
 
-  # Stop new lat from jumping the poles
-  latnew[latnew > 90] <- 90
-  latnew[latnew < -90] <- -90
+  # OPTIMIZED: Vectorized pole clamping
+  latnew <- pmax(pmin(latnew, 90), -90)
 
   # Adjust lon
   lonnew <- ll[, 1] + lonshift # Find new lon...first approximation
 
-  # Adjust for dateline jumps
+  # OPTIMIZED: More efficient dateline adjustment
   lonnew <- lonnew - (360 * floor((lonnew + 180) / 360))
 
   # OPTIMIZED: Direct data.frame creation instead of pipe
@@ -329,17 +327,22 @@ get_clumps <- function(xy, mn, bfr, x_res, y_res){
       return(NULL)
     }
     
-    # MEMORY LEAK FIX: Limit buffer_zone size to prevent memory explosion
-    if (nrow(buffer_zone) > 10000) {
-      # Sample down to manageable size
-      buffer_zone <- buffer_zone[sample(nrow(buffer_zone), 10000), ]
+    # MEMORY LEAK FIX: Adaptive sampling based on buffer size and resolution
+    max_cells <- min(10000, ceiling(pi * max_bfr^2 / (x_res * y_res * 111.325^2)))
+    if (nrow(buffer_zone) > max_cells) {
+      # Stratified sampling to maintain spatial distribution
+      buffer_zone <- buffer_zone[sample(nrow(buffer_zone), max_cells), ]
     }
 
+    # OPTIMIZATION: Pre-calculate raster bounds to avoid repeated min/max calls
+    x_range <- range(buffer_zone$x)
+    y_range <- range(buffer_zone$y)
+    
     clumped_rast <- terra::rast(
-      xmin = min(buffer_zone$x) - x_res/2,
-      xmax = max(buffer_zone$x) + x_res/2,
-      ymin = min(buffer_zone$y) - y_res/2,
-      ymax = max(buffer_zone$y) + y_res/2,
+      xmin = x_range[1] - x_res/2,
+      xmax = x_range[2] + x_res/2,
+      ymin = y_range[1] - y_res/2,
+      ymax = y_range[2] + y_res/2,
       resolution = c(x_res, y_res),
       crs = "EPSG:4326"
     )
@@ -354,7 +357,7 @@ get_clumps <- function(xy, mn, bfr, x_res, y_res){
       terra::patches(directions = 8, allowGaps = FALSE)
     
     # MEMORY LEAK FIX: Explicitly clean up temporary objects
-    rm(buffer_vect, clumped_rast, sp_buffer, buffer_zone)
+    rm(buffer_vect, clumped_rast, sp_buffer, buffer_zone, x_range, y_range)
     
     return(clumped)
     

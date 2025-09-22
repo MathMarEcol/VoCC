@@ -16,7 +16,8 @@
 #' (Grad in C per km for unprojected rasters and C per spatial unit for projected rasters),
 #' and the associated angle (Ang in degrees).
 #'
-#' @references \href{http://science.sciencemag.org/content/334/6056/652}{Burrows et al. 2011}. The pace of shifting climate in marine and terrestrial ecosystems. Science, 334, 652-655.
+#' @references \href{http://science.sciencemag.org/content/334/6056/652}{Burrows et al. 2011}.
+#' The pace of shifting climate in marine and terrestrial ecosystems. Science, 334, 652-655.
 #'
 #' @seealso{\code{\link{tempTrend}}, \code{\link{gVoCC}}}
 #'
@@ -24,10 +25,9 @@
 #' @importFrom stats na.omit
 #'
 #' @export
-#' @author Jorge Garcia Molinos, David S. Schoeman, and Michael T. Burrows
 #' @examples
-#' \dontrun{
-#' HSST <- VoCC_get_data("HSST.tif")
+#'
+#' HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata"))
 #'
 #' yrSST <- sumSeries(HSST,
 #'   p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
@@ -39,15 +39,16 @@
 #' sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
 #'
 #' terra::plot(sg)
-#' }
 #'
 spatGrad <- function(r, th = -Inf, projected = FALSE) {
 
   # Fix devtools check warnings
   "." <- NULL
-  gradNS1 <- gradNS2 <- gradNS3 <- gradNS4 <- gradNS5 <- gradNS6 <- gradWE1 <- gradWE2 <- gradWE3 <- gradWE4 <- gradWE5 <- gradWE6 <- NULL
+  gradNS1 <- gradNS2 <- gradNS3 <- gradNS4 <- gradNS5 <- gradNS6 <- NULL
+  gradWE1 <- gradWE2 <- gradWE3 <- gradWE4 <- gradWE5 <- gradWE6 <- NULL
   sy <- sx <- NSgrad <- WEgrad <- NULL
-  clim <- climE <- climN <- climNE <- climNW <- climS <- climSE <- climSW <- climW <- climFocal <- NULL
+  clim <- climE <- climN <- climNE <- climNW <- NULL
+  climS <- climSE <- climSW <- climW <- climFocal <- NULL
   to <- code <- i.to <- LAT <- angle <- Grad <- .SD <- NULL
 
   if (terra::nlyr(r) > 1) {
@@ -61,12 +62,16 @@ spatGrad <- function(r, th = -Inf, projected = FALSE) {
   spatRaster_values <- terra::values(r)
   n_cells <- terra::ncell(r)
 
+  # OPTIMIZATION: Pre-calculate row and column indices to avoid repeated terra calls
+  row_indices <- terra::rowFromCell(r, 1:n_cells)
+  col_indices <- terra::colFromCell(r, 1:n_cells)
+
   # Create a columns for focal and each of its 8 adjacent cells
   y <- data.table::data.table(terra::adjacent(r, 1:terra::ncell(r), directions = 8, pairs = TRUE))
   y <- na.omit(y[, climFocal := spatRaster_values[from]][order(from, to)]) # OPTIMIZED: Use pre-extracted values
   y[, clim := spatRaster_values[to]] # OPTIMIZED: Use pre-extracted values
-  y[, sy := terra::rowFromCell(r, from) - terra::rowFromCell(r, to)] # Column to identify rows in the raster (N = 1, mid = 0, S = -1)
-  y[, sx := terra::colFromCell(r, to) - terra::colFromCell(r, from)] # Same for columns (E = 1, mid = 0, W = -1)
+  y[, sy := row_indices[from] - row_indices[to]] # Column to identify rows in the raster (N = 1, mid = 0, S = -1)
+  y[, sx := col_indices[to] - col_indices[from]] # Same for columns (E = 1, mid = 0, W = -1)
   y[sx > 1, sx := -1] # Sort out the W-E wrap at the dateline, part I
   y[sx < -1, sx := 1] # Sort out the W-E wrap at the dateline, part II
   y[, code := paste0(sx, sy)] # Make a unique code for each of the eight neighbouring cells
@@ -77,7 +82,10 @@ spatGrad <- function(r, th = -Inf, projected = FALSE) {
     on = "code", code := i.to]
   y <- data.table::dcast(y[, c("from", "code", "clim")], from ~ code, value.var = "clim")
   y[, climFocal := spatRaster_values[from]] # OPTIMIZED: Use pre-extracted values
-  y[, LAT := terra::yFromCell(r, from)] # Add focal cell latitude
+
+  # OPTIMIZATION: Pre-calculate latitude values to avoid repeated terra calls
+  lat_values <- terra::yFromCell(r, 1:n_cells)
+  y[, LAT := lat_values[from]] # Add focal cell latitude using pre-calculated values
 
   # Calculate individual spatial temperature gradients: grads (degC per km)
   # WE gradients difference in temperatures for each western and eastern pairs divided by the distance between the cells in each pair (corrected for  latitudinal distortion if unprojected)
@@ -155,12 +163,13 @@ spatGrad <- function(r, th = -Inf, projected = FALSE) {
   rAng[y$from] <- y$angle
   rGrad[y$from] <- y$Grad
   rGrad[rGrad[] < th] <- th
-  
+
   # MEMORY LEAK FIX: Clean up large intermediate objects
-  rm(spatRaster_values, WE_gradients, NS_gradients, WE_clean, NS_clean,
+  rm(spatRaster_values, lat_values, row_indices, col_indices,
+     WE_gradients, NS_gradients, WE_clean, NS_clean,
      WE_valid, NS_valid, WE_weighted_sums, NS_weighted_sums,
      WE_weight_sums, NS_weight_sums, y, from)
-  
+
   output <- c(rGrad, rAng)
   names(output) <- c("Grad", "Ang")
 

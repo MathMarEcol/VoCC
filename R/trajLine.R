@@ -16,10 +16,11 @@
 #' @seealso{\code{\link{voccTraj}}}
 #'
 #' @export
-#' @author Jorge Garcia Molinos
 #' @examples
-#' \dontrun{
-#' HSST <- VoCC_get_data("HSST.tif")
+#'
+#' EEZ <- terra::vect(system.file("extdata", "EEZ.gpkg", package = "VoCC"))
+#' HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata")) %>%
+#'     terra::crop(terra::ext(EEZ) + 10)
 #'
 #' yrSST <- sumSeries(HSST,
 #'   p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
@@ -41,16 +42,14 @@
 #' ))[, 1:2]
 #'
 #' # Calculate trajectories.
-#' traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
+#' traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, tstep = 1/12)
 #'
 #' # create a spatial line data frame from traj
 #' lns <- trajLine(x = traj)
 #' terra::plot(mn)
-#' terra::plot(lns, add = TRUE)
+#' plot(lns %>% sf::st_geometry(), add = TRUE)
 #'
-#' # Export as ESRI shape file
-#' terra::writeVector(lns, filename = "velTraj", filetype = "ESRI Shapefile")
-#' }
+#'
 trajLine <- function(x, projx = "EPSG:4326") {
 
   x %>%

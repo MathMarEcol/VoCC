@@ -9,9 +9,9 @@ voccTraj(
   vel,
   ang,
   mn,
-  x_res,
-  y_res,
   tstep,
+  x_res = NULL,
+  y_res = NULL,
   tyr = 20,
   bfr = 75,
   grid_resolution = "coarse",
@@ -28,11 +28,11 @@ of the points to project.}
 
 \item{mn}{\code{raster} with the overall mean climatic value over the period of interest.}
 
+\item{tstep}{Numeric. Timestep for each trajectory iteration (usually decimal year).}
+
 \item{x_res}{Numeric. Resolution of the grid in longitude direction (degrees or km).}
 
 \item{y_res}{Numeric. Resolution of the grid in latitude direction (degrees or km).}
-
-\item{tstep}{Numeric. Timestep for each trajectory iteration (usually decimal year).}
 
 \item{tyr}{Integer. Temporal length of the period of interest (years).}
 
@@ -55,6 +55,8 @@ cumulative time traveled instead of using fixed time steps.
 }
 \examples{
 \dontrun{
+HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata"))
+
 yrSST <- sumSeries(HSST,
   p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
   fun = function(x) colMeans(x, na.rm = TRUE),
@@ -82,11 +84,7 @@ lonlat <- stats::na.omit(data.frame(
 ))[, 1:2]
 
 # Calculate trajectories
-# The following throws an error due to the trajectories moving beyond the raster extent
-traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50)
-
-# This accounts for the extent issue
-traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
+traj <- voccTraj(lonlat, vel, ang, mn, tstep = 1/4, tyr = 50)
 }
 
 }
@@ -95,7 +93,4 @@ traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
 }
 \seealso{
 {\code{\link{gVoCC}}, \code{\link{trajClas}}}
-}
-\author{
-Jorge Garcia Molinos, David S. Schoeman and Michael T. Burrows
 }

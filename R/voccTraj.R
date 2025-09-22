@@ -27,9 +27,10 @@
 #'
 #' @seealso{\code{\link{gVoCC}}, \code{\link{trajClas}}}
 #' @export
-#' @author Jorge Garcia Molinos, David S. Schoeman and Michael T. Burrows
 #' @examples
 #' \dontrun{
+#' HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata"))
+#'
 #' yrSST <- sumSeries(HSST,
 #'   p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
 #'   fun = function(x) colMeans(x, na.rm = TRUE),
@@ -57,17 +58,13 @@
 #' ))[, 1:2]
 #'
 #' # Calculate trajectories
-#' # The following throws an error due to the trajectories moving beyond the raster extent
-#' traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50)
-#'
-#' # This accounts for the extent issue
-#' traj <- voccTraj(lonlat, vel, ang, mn, tyr = 50, correct = TRUE)
+#' traj <- voccTraj(lonlat, vel, ang, mn, tstep = 1/4, tyr = 50)
 #' }
 #'
 voccTraj <- function(lonlat, # Starting points
                      vel, ang, mn, # Components of velocity: speed, angle and climatology
-                     x_res, y_res, # Resolution of the grid at which velocity was computed
                      tstep, # Timestep (usually decimal year)
+                     x_res = NULL, y_res = NULL, # Resolution of the grid at which velocity was computed
                      tyr = 20, # Number of years to run for
                      bfr = 75,
                      grid_resolution = "coarse", # Set to "fine" if you have disaggregated to original velocity field to a finer resolution
@@ -75,6 +72,102 @@ voccTraj <- function(lonlat, # Starting points
 
 
   # Setup -------------------------------------------------------------------
+
+  # Validation checks using assertthat
+  assertthat::assert_that(
+    # lonlat must be a data.frame with at least 2 columns
+    is.data.frame(lonlat),
+    msg = "lonlat must be a data.frame"
+  )
+
+  assertthat::assert_that(
+    ncol(lonlat) >= 2,
+    msg = "lonlat must have at least 2 columns (longitude and latitude)"
+  )
+
+  assertthat::assert_that(
+    nrow(lonlat) > 0,
+    msg = "lonlat must contain at least one row"
+  )
+
+  assertthat::assert_that(
+    # vel, ang, and mn must be terra rasters
+    inherits(vel, "SpatRaster"),
+    msg = "vel must be a terra SpatRaster"
+  )
+
+  assertthat::assert_that(
+    inherits(ang, "SpatRaster"),
+    msg = "ang must be a terra SpatRaster"
+  )
+
+  assertthat::assert_that(
+    inherits(mn, "SpatRaster"),
+    msg = "mn must be a terra SpatRaster"
+  )
+
+  assertthat::assert_that(
+    # tstep must be positive numeric
+    is.numeric(tstep) && length(tstep) == 1 && tstep > 0,
+    msg = "tstep must be a positive numeric value"
+  )
+
+  assertthat::assert_that(
+    # x_res and y_res must be positive if provided
+    is.null(x_res) || (is.numeric(x_res) && length(x_res) == 1 && x_res > 0),
+    msg = "x_res must be a positive numeric value if provided"
+  )
+
+  assertthat::assert_that(
+    is.null(y_res) || (is.numeric(y_res) && length(y_res) == 1 && y_res > 0),
+    msg = "y_res must be a positive numeric value if provided"
+  )
+
+  assertthat::assert_that(
+    # When either x_res or y_res is given, the other must also be given
+    (is.null(x_res) && is.null(y_res)) || (!is.null(x_res) && !is.null(y_res)),
+    msg = "When either x_res or y_res is provided, both must be provided"
+  )
+
+  assertthat::assert_that(
+    # tyr must be positive numeric
+    is.numeric(tyr) && length(tyr) == 1 && tyr > 0,
+    msg = "tyr must be a positive numeric value"
+  )
+
+  assertthat::assert_that(
+    # bfr must be positive numeric
+    is.numeric(bfr) && length(bfr) == 1 && bfr > 0,
+    msg = "bfr must be a positive numeric value"
+  )
+
+  assertthat::assert_that(
+    # grid_resolution can only be "coarse" or "fine"
+    is.character(grid_resolution) && length(grid_resolution) == 1 &&
+    grid_resolution %in% c("coarse", "fine"),
+    msg = "grid_resolution must be either 'coarse' or 'fine'"
+  )
+
+  assertthat::assert_that(
+    # When both x_res and y_res are NULL, grid_resolution must be "coarse"
+    !(is.null(x_res) && is.null(y_res)) || grid_resolution == "coarse",
+    msg = "When both x_res and y_res are NULL, grid_resolution must be 'coarse'"
+  )
+
+  assertthat::assert_that(
+    # seed must be numeric if provided
+    is.null(seed) || (is.numeric(seed) && length(seed) == 1),
+    msg = "seed must be a numeric value if provided"
+  )
+
+  if (is.null(x_res) | is.null(y_res)){
+    vel_res <- terra::res(vel)
+
+    x_res <- vel_res[1]
+    y_res <- vel_res[2]
+
+  }
+
 
   # Set seed for reproducibility if provided
   if (!is.null(seed)) {
@@ -104,8 +197,17 @@ voccTraj <- function(lonlat, # Starting points
   ang_values <- terra::values(ang)
   mn_values <- terra::values(mn)  # Pre-extract mn values too
 
-  # Set up variables to catch results
-  llon <- llat <- cellIDend <- Steps <- cellIDs <- trajIDs <- list() # Initiate lists to catch results
+  # MEMORY OPTIMIZATION: Pre-allocate list structure (not content) to avoid dynamic growth
+  # This creates a list of NULL pointers - no contiguous memory required
+  max_steps <- ceiling(tyr / tstep) + 1  # Maximum possible steps + initial
+
+  # Pre-allocate list structure only - each element will be allocated independently
+  llon <- vector("list", max_steps)
+  llat <- vector("list", max_steps)
+  cellIDend <- vector("list", max_steps)
+  Steps <- vector("list", max_steps)
+  cellIDs <- vector("list", max_steps)
+  trajIDs <- vector("list", max_steps)
 
   # Populate the first slots with starting points
   cellIDs[[1]] <- tcells
@@ -122,15 +224,18 @@ voccTraj <- function(lonlat, # Starting points
 
   # Loop --------------------------------------------------------------------
   # Loop through the trajectories
-  n_steps <- tyr / tstep
-  
+  n_steps <- ceiling(tyr / tstep)
+
   # Add safety check for reasonable number of steps
   if (n_steps > 1000) {
     warning("Large number of trajectory steps (", n_steps, "). Consider reducing tyr or increasing tstep.")
   }
-  
-  for (i in 1:n_steps) {
-    
+
+  # Track actual steps used for efficient final processing
+  actual_steps_used <- 1  # Start with 1 (initial step)
+
+  for (i in seq_len(n_steps)) {
+
     # Safety check: if no trajectories remain, break early
     if (nrow(lonlat) == 0) {
       message("All trajectories terminated at step ", i-1)
@@ -141,18 +246,18 @@ voccTraj <- function(lonlat, # Starting points
 
     # OPTIMIZATION: Get cell IDs first, then extract values by indexing (much faster)
     fcells <- terra::cellFromXY(vel, llold) # Get the cells that the trajectories start in
-    
+
     # MEMORY LEAK FIX: Add bounds checking to prevent invalid indexing
     valid_fcells <- !is.na(fcells) & fcells > 0 & fcells <= length(vel_values)
     if (!any(valid_fcells)) {
       message("All trajectories moved out of bounds at step ", i)
       break
     }
-    
+
     # Extract values by direct indexing (much faster than terra::extract)
     vell <- vel_values[fcells[valid_fcells]]
     angg <- ang_values[fcells[valid_fcells]]
-    
+
     # Update tracking variables for valid cells only
     if (!all(valid_fcells)) {
       llold <- llold[valid_fcells, , drop = FALSE]
@@ -291,15 +396,20 @@ voccTraj <- function(lonlat, # Starting points
     cells_to_keep <- which(is.na(sflags))
     lonlat <- lonlat[cells_to_keep, ]
 
-    # Collect results
-    llon[[i + 1]] <- lonlat[, 1] # Add lon to the list
-    llat[[i + 1]] <- lonlat[, 2] # Add lat to the list
-    cellIDs[[i + 1]] <- fcells[cells_to_keep] # Add departure cellIDs to the list
-    cellIDend[[i + 1]] <- tcells[cells_to_keep] # Add arrival cellIDs to the list
-    Steps[[i + 1]] <- rep(i, length(tcells[cells_to_keep])) # Capture the time_step
-    trajIDs[[i + 1]] <- trj_id[cells_to_keep]
-    sflags <- sflags[cells_to_keep] # Adjust the flags list
-    trj_id <- trj_id[cells_to_keep] # Adjust the trajectory IDs
+    # MEMORY OPTIMIZATION: Direct assignment to pre-allocated list slots
+    # Each element is stored independently - no contiguous memory required
+    step_index <- i + 1
+    llon[[step_index]] <- lonlat[, 1]
+    llat[[step_index]] <- lonlat[, 2]
+    cellIDs[[step_index]] <- fcells[cells_to_keep]
+    cellIDend[[step_index]] <- tcells[cells_to_keep]
+    Steps[[step_index]] <- rep(i, length(tcells[cells_to_keep]))
+    trajIDs[[step_index]] <- trj_id[cells_to_keep]
+
+    # Update tracking variables
+    sflags <- sflags[cells_to_keep]
+    trj_id <- trj_id[cells_to_keep]
+    actual_steps_used <- step_index
 
     # Progress reporting - only in interactive sessions or when explicitly requested
     if (interactive() && getOption("VoCC.verbose", FALSE)) {
@@ -308,25 +418,64 @@ voccTraj <- function(lonlat, # Starting points
     }
 
   }
-  
+
   # MEMORY LEAK FIX: Clean up large objects before final processing
   rm(vel_values, ang_values, mn_values)
-  
-  # MEMORY LEAK FIX: More efficient final concatenation
+
+  # MEMORY OPTIMIZATION: Only process used slots and clean up progressively
+  # Trim to actual used length - unused slots remain as NULL (minimal memory)
+  if (actual_steps_used < max_steps) {
+    llon <- llon[1:actual_steps_used]
+    llat <- llat[1:actual_steps_used]
+    Steps <- Steps[1:actual_steps_used]
+    trajIDs <- trajIDs[1:actual_steps_used]
+    cellIDs <- cellIDs[1:actual_steps_used]
+    cellIDend <- cellIDend[1:actual_steps_used]
+  }
+
+  # MEMORY LEAK FIX: Progressive cleanup to minimize peak memory usage
+  # Each unlist operation works on independent memory chunks
+  steps_vec <- unlist(Steps, use.names = FALSE)
+  rm(Steps)
+
+  lon_vec <- unlist(llon, use.names = FALSE)
+  rm(llon)
+
+  lat_vec <- unlist(llat, use.names = FALSE)
+  rm(llat)
+
+  id_vec <- unlist(trajIDs, use.names = FALSE)
+  rm(trajIDs)
+
+  start_cell_vec <- unlist(cellIDs, use.names = FALSE)
+  rm(cellIDs)
+
+  end_cell_vec <- unlist(cellIDend, use.names = FALSE)
+  rm(cellIDend)
+
+  # Create final result with cleaned vectors
   result <- tibble::tibble(
-    Steps = unlist(Steps, use.names = FALSE),
-    lon = unlist(llon, use.names = FALSE),
-    lat = unlist(llat, use.names = FALSE),
-    ID = unlist(trajIDs, use.names = FALSE),
-    start_cell = unlist(cellIDs, use.names = FALSE),
-    end_cell = unlist(cellIDend, use.names = FALSE)
+    Steps = steps_vec,
+    lon = lon_vec,
+    lat = lat_vec,
+    ID = id_vec,
+    start_cell = start_cell_vec,
+    end_cell = end_cell_vec
   )
-  
-  # Clean up lists
-  rm(Steps, llon, llat, trajIDs, cellIDs, cellIDend)
-  
-  # Force garbage collection
+
+  # Clean up final vectors
+  rm(steps_vec, lon_vec, lat_vec, id_vec, start_cell_vec, end_cell_vec)
+
+  # Clean up any remaining large objects from the loop
+  if (exists("lonlat")) rm(lonlat)
+  if (exists("llold")) rm(llold)
+  if (exists("fcells")) rm(fcells)
+  if (exists("tcells")) rm(tcells)
+  if (exists("sflags")) rm(sflags)
+  if (exists("trj_id")) rm(trj_id)
+
+  # Force garbage collection to free memory immediately
   gc()
-  
+
   return(result)
 }

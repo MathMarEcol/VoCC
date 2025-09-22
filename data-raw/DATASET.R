@@ -4,8 +4,9 @@
 # Use the existing ones for now. I will speak to Jorge.
 
 load("data-raw/EEZ.RData")
-EEZ <- terra::vect(EEZ)
-terra::writeVector(EEZ, filename = "inst/extdata/EEZ.gpkg", overwrite = TRUE)
+EEZ <- sf::st_as_sf(EEZ) %>%
+  sf::st_make_valid() %>%
+  sf::st_write("inst/extdata/EEZ.gpkg", append = FALSE)
 
 load("data-raw/HSST.RData")
 HSST <- terra::rast(HSST)

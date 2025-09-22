@@ -26,8 +26,8 @@ and (iii) the location of remnant, novel and disappearing climates between both 
 Function to create a binned scatter plot of two climate variables.
 }
 \examples{
-\dontrun{
-JapTC <- VoCC_get_data("JapTC.tif")
+
+JapTC <- terra::rast(system.file("extdata", "JapTC.tif", package = "VoCC"))
 
 # Plot climate space for the two first variables(annual precipitation and maximum temperature)
 xy <- stats::na.omit(data.frame(
@@ -46,11 +46,8 @@ ggplot2::ggsave(
   plot = out, filename = file.path(getwd(), "example_plot.pdf"),
   width = 17, height = 17, unit = "cm"
 )
-}
+
 }
 \seealso{
 {\code{\link{dVoCC}}, \code{\link{climPCA}}}
-}
-\author{
-Jorge Garcia Molinos and Naoki H. Kumagai
 }

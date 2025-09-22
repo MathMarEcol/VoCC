@@ -38,10 +38,9 @@
 #' @seealso{\code{\link{climPCA}}, \code{\link{climPlot}}}
 #'
 #' @export
-#' @author Jorge Garcia Molinos
 #' @examples
-#' \dontrun{
-#' JapTC <- VoCC_get_data("JapTC.tif")
+#'
+#' JapTC <- terra::rast(system.file("extdata", "JapTC.tif", package = "VoCC"))
 #'
 #' # Create a data frame with the necessary variables in the required order
 #' clim <- stats::na.omit(data.frame(terra::values(JapTC), cid = 1:terra::ncell(JapTC)))
@@ -57,6 +56,7 @@
 #' r1[avocc1$focal] <- avocc1$vel
 #' terra::plot(r1)
 #'
+#' \dontrun{
 #' # Cell-specific, distance-unrestricted climate analogue velocity based on least-cost path distances
 #' # First, create the conductance matrix (all land cells considered to have conductance of 1)
 #' r <- JapTC[[1]]
@@ -103,13 +103,21 @@ dVoCC <- function(clim, n, tdiff, method = "Single", climTol, geoTol,
       dplyr::mutate(cid = dplyr::row_number())
   }
 
-  # OPTIMIZATION: Use proper chunking instead of single-cell splits for better load balancing
+  # OPTIMIZATION: Improved chunking strategy for better load balancing
   n_cores <- future::availableCores()
-  chunk_size <- max(50, ceiling(nrow(dat) / (n_cores * 4))) # Minimum 50 cells per chunk
-  
-  # Create chunks of data instead of individual cells
-  dat_chunks <- split(dat, ceiling(seq_len(nrow(dat)) / chunk_size))
-  
+
+  # Calculate optimal chunk size based on data size and cores
+  # Aim for 2-4 chunks per core for good load balancing
+  target_chunks <- n_cores * 3
+  optimal_chunk_size <- max(100, ceiling(nrow(dat) / target_chunks))
+
+  # Ensure we don't create too many tiny chunks
+  actual_chunks <- min(target_chunks, ceiling(nrow(dat) / optimal_chunk_size))
+  final_chunk_size <- ceiling(nrow(dat) / actual_chunks)
+
+  # Create balanced chunks
+  dat_chunks <- split(dat, ceiling(seq_len(nrow(dat)) / final_chunk_size))
+
   result <- dat_chunks %>%
     furrr::future_map(pdVoCC,
                       dat_full = dat,  # Pass full dataset for analogue search

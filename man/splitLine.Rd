@@ -16,6 +16,3 @@ splitLine(A, B, n)
 \description{
 Internal. Split a line segment defined by points A-B into n parts
 }
-\author{
-Jorge Garcia Molinos
-}

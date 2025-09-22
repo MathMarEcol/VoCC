@@ -16,11 +16,11 @@
 #' @seealso{\code{\link{tempTrend}}, \code{\link{spatGrad}}}
 #'
 #' @export
-#' @author Jorge Garcia Molinos
 #'
 #' @examples
-#' \dontrun{
-#' HSST <- VoCC_get_data("HSST.tif")
+#'
+#' HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata"))
+#'
 #' yrSST <- sumSeries(HSST,
 #'   p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
 #'   fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"
@@ -37,11 +37,23 @@
 gVoCC <- function(tempTrend, spatGrad) {
   VoCC <- tempTrend[[1]] / spatGrad[[1]]
 
-  # velocity angles have opposite direction to the spatial climatic gradient if warming and same direction (cold to warm) if cooling
-  ind <- which(terra::values(VoCC) > 0)
+  # OPTIMIZATION: Extract values once and use vectorized operations
+  VoCC_values <- terra::values(VoCC)
+  spatGrad_ang_values <- terra::values(spatGrad[[2]])
+
+  # Vectorized angle calculation with proper NA handling
+  warming_cells <- VoCC_values > 0 & !is.na(VoCC_values)
+  VoCCang_values <- spatGrad_ang_values
+  VoCCang_values[warming_cells] <- spatGrad_ang_values[warming_cells] + 180
+
+  # Handle angle wrapping with NA protection
+  needs_wrapping <- !is.na(VoCCang_values) & VoCCang_values >= 360
+  VoCCang_values[needs_wrapping] <- VoCCang_values[needs_wrapping] - 360
+
+  # Create output raster efficiently
   VoCCang <- spatGrad[[2]]
-  VoCCang[ind] <- spatGrad[[2]][ind] + 180
-  VoCCang[] <- ifelse(VoCCang[] >= 360, VoCCang[] - 360, VoCCang[])
+  terra::values(VoCCang) <- VoCCang_values
+
   output <- c(VoCC, VoCCang)
   names(output) <- c("voccMag", "voccAng")
   return(output)

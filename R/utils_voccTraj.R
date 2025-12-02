@@ -32,18 +32,18 @@ get_dist <- function(y1, x1, y2, x2) {
   lon1_rad <- x1 * pi / 180
   lat2_rad <- y2 * pi / 180
   lon2_rad <- x2 * pi / 180
-  
+
   # Haversine formula - much faster than sf::st_distance
   dlat <- lat2_rad - lat1_rad
   dlon <- lon2_rad - lon1_rad
-  
+
   a <- sin(dlat/2)^2 + cos(lat1_rad) * cos(lat2_rad) * sin(dlon/2)^2
   c <- 2 * atan2(sqrt(a), sqrt(1-a))
-  
+
   # Earth radius in meters (same units as sf::st_distance)
   R <- 6371000
   distance <- R * c
-  
+
   return(distance)
 }
 
@@ -55,7 +55,7 @@ get_dist <- function(y1, x1, y2, x2) {
 #'
 #' @noRd
 get_dest_cell_coarse <- function(rw, x_res, y_res, bfr, vel_values, mn_values, vel_raster, mn_raster) {
-  
+
   # Add error handling for invalid inputs
   if (any(is.na(rw[1:4]))) {
     return(NA)
@@ -70,7 +70,7 @@ get_dest_cell_coarse <- function(rw, x_res, y_res, bfr, vel_values, mn_values, v
   }, error = function(e) {
     return(NULL)
   })
-  
+
   if (is.null(pos_depart)) {
     return(NA)
   }
@@ -80,10 +80,11 @@ get_dest_cell_coarse <- function(rw, x_res, y_res, bfr, vel_values, mn_values, v
   }, error = function(e) {
     return(NULL)
   })
-  
+
   if (is.null(clumped)) {
     return(NA)
   }
+
 
   # Which clump did I start in?
   r1 <- purrr::pluck(rw, 1) # We use this cell a lot, so let's just make it an object
@@ -94,11 +95,18 @@ get_dest_cell_coarse <- function(rw, x_res, y_res, bfr, vel_values, mn_values, v
   search_xy <- terra::xyFromCell(clumped, which(clumped[] == from_clump)) %>%
     as.data.frame()
 
+  rm(clumped) # Clean up clumped raster after extracting needed data
+
   # Get the ssts in the cells to search
   or <- terra::extract(mn_raster, search_xy, cells = TRUE, xy = TRUE) %>%
     dplyr::rename(sst = 2, x = 4, y = 5)
 
-  # MEMORY LEAK FIX: Use pre-extracted values instead of raster indexing
+  rm(search_xy) # Clean up search_xy after use
+
+  # Use pre-extracted values instead of raster indexing
+  # Extract depart coords once before conditionals
+  depart_coords <- sf::st_coordinates(pos_depart)
+
   if (vel_values[r1] > 0) {
     o <- or %>%
       dplyr::filter(.data$sst < mn_values[r1]) %>%
@@ -107,7 +115,6 @@ get_dest_cell_coarse <- function(rw, x_res, y_res, bfr, vel_values, mn_values, v
       dest_cell <- NA
     } else {
       # OPTIMIZED: Use vectorized Haversine instead of sf::st_distance
-      depart_coords <- sf::st_coordinates(pos_depart)
       distances <- get_dist(depart_coords[1,2], depart_coords[1,1], o$y, o$x)
       dest_cell <- o$cell[which.min(distances)]
     }
@@ -119,11 +126,16 @@ get_dest_cell_coarse <- function(rw, x_res, y_res, bfr, vel_values, mn_values, v
       dest_cell <- NA
     } else {
       # OPTIMIZED: Use vectorized Haversine instead of sf::st_distance
-      depart_coords <- sf::st_coordinates(pos_depart)
       distances <- get_dist(depart_coords[1,2], depart_coords[1,1], o$y, o$x)
       dest_cell <- o$cell[which.min(distances)]
     }
   }
+
+  # Clean up sf objects before returning
+  rm(pos_depart, or, depart_coords)
+  if (exists("o")) rm(o)
+  if (exists("distances")) rm(distances)
+
   return(dest_cell)
 }
 
@@ -135,7 +147,7 @@ get_dest_cell_coarse <- function(rw, x_res, y_res, bfr, vel_values, mn_values, v
 #'
 #' @noRd
 get_dest_cell_fine <- function(rw, x_res, y_res, bfr, vel_values, mn_values, vel_raster, mn_raster) {
-  
+
   # Add error handling for invalid inputs
   if (any(is.na(rw[1:4]))) {
     return(NA)
@@ -150,7 +162,7 @@ get_dest_cell_fine <- function(rw, x_res, y_res, bfr, vel_values, mn_values, vel
   }, error = function(e) {
     return(NULL)
   })
-  
+
   if (is.null(pos_depart)) {
     return(NA)
   }
@@ -162,7 +174,7 @@ get_dest_cell_fine <- function(rw, x_res, y_res, bfr, vel_values, mn_values, vel
   }, error = function(e) {
     return(NULL)
   })
-  
+
   if (is.null(xy)) {
     return(NA)
   }
@@ -172,7 +184,7 @@ get_dest_cell_fine <- function(rw, x_res, y_res, bfr, vel_values, mn_values, vel
   }, error = function(e) {
     return(NULL)
   })
-  
+
   if (is.null(clumped)) {
     return(NA)
   }
@@ -186,11 +198,17 @@ get_dest_cell_fine <- function(rw, x_res, y_res, bfr, vel_values, mn_values, vel
     as.data.frame()
   search_cells <- terra::cellFromXY(mn_raster, search_xy) # Which cells are these
 
+  # MEMORY LEAK FIX: Clean up clumped raster immediately after extracting needed data
+  rm(clumped)
+
   # Get the ssts in the cells to search
   or <- terra::extract(mn_raster, search_xy, cells = TRUE, xy = TRUE) %>%
     dplyr::rename(sst = 2, x = 4, y = 5)
 
-  # MEMORY LEAK FIX: Use pre-extracted values instead of raster indexing
+  # Clean up after extraction
+  rm(search_xy, search_cells)
+
+  # Use pre-extracted values instead of raster indexing
   if (vel_values[r1] > 0) {
     # Find all cells in the search area that meet the sst criterion
     o <- or %>%
@@ -247,11 +265,18 @@ get_dest_cell_fine <- function(rw, x_res, y_res, bfr, vel_values, mn_values, vel
       }
     }
   }
+
+  # Clean up objects before returning
+  rm(pos_depart, xy, or)
+  if (exists("o")) rm(o)
+  if (exists("potential_dest_cells")) rm(potential_dest_cells)
+  if (exists("distances")) rm(distances)
+
   return(dest_cell)
 }
 
 
-# JDE - I think we should rearrange arguments to x, y to be consistent
+# TODO JDE - I think we should rearrange arguments to x, y to be consistent
 
 # Find new destination, given velocity (km/yr), angle (º), time step (yr) and initial coordinates (ºlon, ºlat); max allowed jump is 1 deg
 # vell = vel[fcells] %>% pull(1); angg = ang[fcells] %>% pull(1); timestep = tstep; ll = llold
@@ -262,17 +287,17 @@ destcoords <- function(vell, angg, timestep, ll, y_res, x_res) {
   angg_rad <- deg2rad(angg)
   cos_angg <- cos(angg_rad)
   sin_angg <- sin(angg_rad)
-  
+
   # OPTIMIZED: Vectorized calculations with better numerical stability
   abs_vell <- abs(vell)
   latshift <- (abs_vell * timestep * cos_angg) / 111.325 # Calculate shift in lat
   latnew <- ll[, 2] + latshift # Find new lat...first approximation
-  
+
   # OPTIMIZED: Pre-compute cos(deg2rad(latnew)) for longitude calculation
   cos_latnew <- cos(deg2rad(latnew))
   # Add small epsilon to prevent division by zero
   cos_latnew[cos_latnew == 0] <- .Machine$double.eps
-  
+
   lonshift <- (abs_vell * timestep * sin_angg) / (111.325 * cos_latnew) # Shift in lon
 
   # OPTIMIZED: Vectorized clamping instead of conditional assignment
@@ -287,16 +312,16 @@ destcoords <- function(vell, angg, timestep, ll, y_res, x_res) {
     tan_angg_adj[tan_angg_adj == 0] <- .Machine$double.eps
     latshift[needs_adjustment] <- (x_res * 111.325 * cos_ll_adj / tan_angg_adj) / 111.325
   }
-  
+
   latnew <- ll[, 2] + latshift # Find new lat by adding the adjusted lats
 
-  # OPTIMIZED: Vectorized pole clamping
+  # Vectorized pole clamping
   latnew <- pmax(pmin(latnew, 90), -90)
 
   # Adjust lon
   lonnew <- ll[, 1] + lonshift # Find new lon...first approximation
 
-  # OPTIMIZED: More efficient dateline adjustment
+  # Efficient dateline adjustment
   lonnew <- lonnew - (360 * floor((lonnew + 180) / 360))
 
   # OPTIMIZED: Direct data.frame creation instead of pipe
@@ -305,15 +330,29 @@ destcoords <- function(vell, angg, timestep, ll, y_res, x_res) {
 }
 
 
+
+
+
 #'
 #' @noRd
 get_clumps <- function(xy, mn, bfr, x_res, y_res){
-  
-  # MEMORY LEAK FIX: Add error handling and explicit memory management
+
+  # # Memory tracking helper
+  # report_mem <- function(label) {
+  #   if (debug_memory) {
+  #     gc_info <- gc(verbose = FALSE, reset = FALSE)
+  #     used_mb <- sum(gc_info[, "used"] * c(8, 56)) / (1024^2)
+  #     message(sprintf("      [get_clumps] %s: %.2f MB", label, used_mb))
+  #   }
+  # }
+
+  # Add error handling and explicit memory management
   tryCatch({
-    # MEMORY LEAK FIX: Limit buffer size to prevent excessive memory usage
+
+    # Create buffer polygon (in metres)
     max_bfr <- min(bfr, 200)  # Cap buffer at 200km to prevent memory issues
-    sp_buffer <- sf::st_buffer(xy, max_bfr * 1000) # Buffer around departure point, remembering that buffer is in metres
+
+    sp_buffer <- sf::st_buffer(xy, max_bfr * 1000) # Buffer around departure point
 
     buffer_zone <- terra::extract(mn, sp_buffer, cells = TRUE, xy = TRUE) %>%
       dplyr::select(-"ID") %>%
@@ -321,23 +360,22 @@ get_clumps <- function(xy, mn, bfr, x_res, y_res){
       dplyr::rename(sst = 1) %>% #*** rename "climatology", if needed
       dplyr::select("x", "y", "sst", "cell") %>%
       tidyr::drop_na("sst")
-    
+
+
+    rm(sp_buffer) # Clean up sp_buffer immediately after use
+
     # Check if buffer_zone is empty
     if (nrow(buffer_zone) == 0) {
       return(NULL)
     }
-    
-    # MEMORY LEAK FIX: Adaptive sampling based on buffer size and resolution
-    max_cells <- min(10000, ceiling(pi * max_bfr^2 / (x_res * y_res * 111.325^2)))
-    if (nrow(buffer_zone) > max_cells) {
-      # Stratified sampling to maintain spatial distribution
-      buffer_zone <- buffer_zone[sample(nrow(buffer_zone), max_cells), ]
-    }
 
-    # OPTIMIZATION: Pre-calculate raster bounds to avoid repeated min/max calls
+
+    # Pre-calculate raster bounds to avoid repeated min/max calls
     x_range <- range(buffer_zone$x)
     y_range <- range(buffer_zone$y)
-    
+
+    # JDE This is where the memory problem is... Possibly with small rasters
+
     clumped_rast <- terra::rast(
       xmin = x_range[1] - x_res/2,
       xmax = x_range[2] + x_res/2,
@@ -347,20 +385,41 @@ get_clumps <- function(xy, mn, bfr, x_res, y_res){
       crs = "EPSG:4326"
     )
 
-    # MEMORY LEAK FIX: Create SpatVector more efficiently and clean up immediately
-    buffer_vect <- terra::vect(buffer_zone[, c("x", "y", "sst")], geom = c("x", "y"), crs = "EPSG:4326")
-    
-    clumped <- terra::rasterize(
-      x = buffer_vect,
-      y = clumped_rast, # The template to rasterize onto
-      field = "sst") %>% # The data
-      terra::patches(directions = 8, allowGaps = FALSE)
-    
-    # MEMORY LEAK FIX: Explicitly clean up temporary objects
-    rm(buffer_vect, clumped_rast, sp_buffer, buffer_zone, x_range, y_range)
-    
+
+    if (nrow(buffer_zone) == 1) { # No need to rasterize if only 1 cell
+
+      terra::values(clumped_rast) <- buffer_zone$sst
+      terra::set.names(clumped_rast, "last") # name to match rasterize below
+      clumped <- clumped_rast %>%
+        terra::patches(directions = 8, allowGaps = FALSE)
+
+      rm(buffer_zone, clumped_rast, x_range, y_range) # Explicitly clean up
+
+    } else {
+
+      # Create SpatVector
+      buffer_vect <- terra::vect(buffer_zone[, c("x", "y", "sst")],
+                                 geom = c("x", "y"),
+                                 crs = "EPSG:4326")
+
+      clumped <- terra::rasterize(
+        x = buffer_vect,
+        y = clumped_rast, # The template to rasterize onto
+        field = "sst", ) %>% # The data
+        terra::patches(directions = 8, allowGaps = FALSE)
+
+
+      rm(buffer_zone, buffer_vect, clumped_rast, x_range, y_range) # Explicitly clean up
+    }
+
+
+    terra::tmpFiles(remove = TRUE) # Force Terra to delete temporary files immediately
+
+    # Force immediate garbage collection for terra objects
+    invisible(gc(verbose = FALSE, full = FALSE))
+
     return(clumped)
-    
+
   }, error = function(e) {
     warning("Error in get_clumps: ", e$message)
     return(NULL)

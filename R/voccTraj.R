@@ -4,7 +4,7 @@
 #' are calculated by propagating climatic isopleths using the magnitude and direction of
 #' local (cell) velocities. This is a slightly modified version of the original
 #' Burrows et al. (2014) approach in that iterations of a trajectory are based on
-#' cumulative time traveled instead of using fixed time steps.
+#' cumulative time travelled instead of using fixed time steps.
 #'
 #' @param lonlat \code{data.frame} with the longitude and latitude (in decimal degrees)
 #' of the points to project.
@@ -69,6 +69,16 @@ voccTraj <- function(lonlat, # Starting points
                      bfr = 75,
                      grid_resolution = "coarse", # Set to "fine" if you have disaggregated to original velocity field to a finer resolution
                      seed = NULL) { # Random seed for reproducibility
+
+
+  # # Memory tracking helper function
+  # report_memory <- function(label) {
+  #   if (debug_memory) {
+  #     gc_info <- gc(verbose = FALSE, reset = FALSE)
+  #     used_mb <- sum(gc_info[, "used"] * c(8, 56)) / (1024^2)
+  #     message(sprintf("[MEMORY] %s: %.2f MB", label, used_mb))
+  #   }
+  # }
 
 
   # Setup -------------------------------------------------------------------
@@ -162,10 +172,8 @@ voccTraj <- function(lonlat, # Starting points
 
   if (is.null(x_res) | is.null(y_res)){
     vel_res <- terra::res(vel)
-
     x_res <- vel_res[1]
     y_res <- vel_res[2]
-
   }
 
 
@@ -178,7 +186,7 @@ voccTraj <- function(lonlat, # Starting points
   r_base <- terra::rast(res = c(x_res, y_res)) %>%
     terra::crop(vel)
 
-  # MEMORY LEAK FIX: Don't modify original raster, work with values directly
+  # Don't modify original raster, work with values directly
   max_vel <- 111.325 * x_res / tstep
   vel_values <- terra::values(vel)
   vel_values[vel_values > max_vel] <- max_vel
@@ -197,7 +205,8 @@ voccTraj <- function(lonlat, # Starting points
   ang_values <- terra::values(ang)
   mn_values <- terra::values(mn)  # Pre-extract mn values too
 
-  # MEMORY OPTIMIZATION: Pre-allocate list structure (not content) to avoid dynamic growth
+
+  # Pre-allocate list structure (not content) to avoid dynamic growth
   # This creates a list of NULL pointers - no contiguous memory required
   max_steps <- ceiling(tyr / tstep) + 1  # Maximum possible steps + initial
 
@@ -235,7 +244,6 @@ voccTraj <- function(lonlat, # Starting points
   actual_steps_used <- 1  # Start with 1 (initial step)
 
   for (i in seq_len(n_steps)) {
-
     # Safety check: if no trajectories remain, break early
     if (nrow(lonlat) == 0) {
       message("All trajectories terminated at step ", i-1)
@@ -244,10 +252,10 @@ voccTraj <- function(lonlat, # Starting points
 
     llold <- lonlat # Take a copy of lonlat
 
-    # OPTIMIZATION: Get cell IDs first, then extract values by indexing (much faster)
+    # Get cell IDs first, then extract values by indexing (much faster)
     fcells <- terra::cellFromXY(vel, llold) # Get the cells that the trajectories start in
 
-    # MEMORY LEAK FIX: Add bounds checking to prevent invalid indexing
+    # Add bounds checking to prevent invalid indexing
     valid_fcells <- !is.na(fcells) & fcells > 0 & fcells <= length(vel_values)
     if (!any(valid_fcells)) {
       message("All trajectories moved out of bounds at step ", i)
@@ -283,7 +291,16 @@ voccTraj <- function(lonlat, # Starting points
     # MEMORY LEAK FIX: Use pre-extracted values instead of raster indexing
     onland <- which(is.na(vel_values[tcells]))
 
-    if (length(onland) > 0) { # Only bother if there is at least one cell that returns a NA velocity = land
+    if (length(onland) > 0) {
+      # Clean up Terra temp files accumulated from previous iterations
+      # Prevents accumulation across apply() calls
+      terra::tmpFiles(remove = TRUE)
+
+      # Force garbage collection before potentially memory-intensive operations
+      if (length(onland) > 100 && i %% 5 == 0) {
+        gc(full = TRUE)
+      }
+
       if (grid_resolution == "fine") { #*** Fine switch
 
         # Collect the stuff we need here for cells that are onland
@@ -300,7 +317,7 @@ voccTraj <- function(lonlat, # Starting points
                          code = paste(fcell, tcell, sep = " "),
                          ref = 1:length(fcell))
 
-        # MEMORY LEAK FIX: Pass values instead of full raster objects
+        # Pass values instead of full raster objects
         ttcell <- apply(ft[, 1:4], 1, get_dest_cell_fine, x_res = x_res, y_res = y_res, bfr = bfr,
                        vel_values = vel_values, mn_values = mn_values, vel_raster = vel, mn_raster = mn)
 
@@ -337,7 +354,8 @@ voccTraj <- function(lonlat, # Starting points
           fy = fpos %>% purrr::pluck(2),
           code = paste(fcell, tcell, sep = " "), ref = 1:length(fcell)
         )
-        # MEMORY LEAK FIX: Pass values instead of full raster objects
+
+        # Pass values instead of full raster objects
         ttcell <- apply(ft[, 1:4], 1, get_dest_cell_coarse, x_res = x_res, y_res = y_res, bfr = bfr,
                        vel_values = vel_values, mn_values = mn_values, vel_raster = vel, mn_raster = mn)
 
@@ -389,6 +407,7 @@ voccTraj <- function(lonlat, # Starting points
         tcells[onland] <- ttcell
         sflags[onland] <- SFlags
       }
+
     }
 
     # Pass on only those cells that are not stuck
@@ -411,6 +430,7 @@ voccTraj <- function(lonlat, # Starting points
     trj_id <- trj_id[cells_to_keep]
     actual_steps_used <- step_index
 
+
     # Progress reporting - only in interactive sessions or when explicitly requested
     if (interactive() && getOption("VoCC.verbose", FALSE)) {
       message("Step ", i, "/", tyr/tstep, " (", round(100 * i / (tyr / tstep), 1), "%) - ",
@@ -419,10 +439,10 @@ voccTraj <- function(lonlat, # Starting points
 
   }
 
-  # MEMORY LEAK FIX: Clean up large objects before final processing
+  # Clean up large objects before final processing
   rm(vel_values, ang_values, mn_values)
 
-  # MEMORY OPTIMIZATION: Only process used slots and clean up progressively
+  # Only process used slots and clean up progressively
   # Trim to actual used length - unused slots remain as NULL (minimal memory)
   if (actual_steps_used < max_steps) {
     llon <- llon[1:actual_steps_used]
@@ -433,7 +453,7 @@ voccTraj <- function(lonlat, # Starting points
     cellIDend <- cellIDend[1:actual_steps_used]
   }
 
-  # MEMORY LEAK FIX: Progressive cleanup to minimize peak memory usage
+  # Progressive cleanup to minimize peak memory usage
   # Each unlist operation works on independent memory chunks
   steps_vec <- unlist(Steps, use.names = FALSE)
   rm(Steps)

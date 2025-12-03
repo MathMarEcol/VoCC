@@ -51,7 +51,7 @@ Function to calculate vocc trajectories after Burrows et al (2014). Trajectories
 are calculated by propagating climatic isopleths using the magnitude and direction of
 local (cell) velocities. This is a slightly modified version of the original
 Burrows et al. (2014) approach in that iterations of a trajectory are based on
-cumulative time traveled instead of using fixed time steps.
+cumulative time travelled instead of using fixed time steps.
 }
 \examples{
 \dontrun{

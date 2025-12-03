@@ -99,11 +99,11 @@ dVoCC <- function(clim, n, tdiff, method = "Single", climTol, geoTol,
 
   # Check if column cid (cell ID exists)
   if (!"cid" %in% names(dat)) {
-    dat <- dat %>%
-      dplyr::mutate(cid = dplyr::row_number())
+    dat[, cid := .I]
   }
 
   # OPTIMIZATION: Improved chunking strategy for better load balancing
+  # TODO move cores detection outside function for reuse
   n_cores <- future::availableCores()
 
   # Calculate optimal chunk size based on data size and cores
@@ -160,51 +160,88 @@ pdVoCC <- function(dat, dat_full, n, tdiff, method = "Single", climTol, geoTol,
     vel = as.double(NA)
   )
 
-  # FIXED: Use full dataset for analogue search, not just the chunk
-  fut <- dat_full[, seq(2, (2 * n), by = 2), with = FALSE]
+  # OPTIMIZATION #6: Pre-compute column indices outside loop
+  pres_cols <- seq(1, (2 * n), by = 2)
+  fut_cols <- seq(2, (2 * n), by = 2)
+  
+  # OPTIMIZATION #1: Convert to matrix once instead of creating data.table each iteration
+  fut_mat <- as.matrix(dat_full[, fut_cols, with = FALSE])
+  pres_mat <- as.matrix(dat[, pres_cols, with = FALSE])
+  
+  # Pre-extract full dataset coordinates for faster subsetting
+  full_coords <- as.matrix(dat_full[, c("x", "y"), with = FALSE])
+  focal_coords_mat <- as.matrix(dat[, c("x", "y"), with = FALSE])
+  full_cids <- dat_full$cid
+  
+  # ADDITIONAL: Pre-compute threshold matrix for "Single" method (saves recreation in loop)
+  if (method == "Single") {
+    climTol_mat <- matrix(rep(climTol, each = nrow(fut_mat)), ncol = n)
+  }
 
   for (i in seq_len(nrow(dat))) {
 
-    # for each focal cell subset target cell analogues (within ClimTol)
-    pres <- as.numeric(dat[i, seq(1, (2 * n), by = 2), with = FALSE])
-    dif <- data.table::data.table(sweep(fut, 2, pres, "-"))
-
-    # Identify future analogue cells
-    if (method == "Single") { # Ohlemuller et al 2006 / Hamann et al 2015
-      upper <- colnames(dif)
-      l <- lapply(upper, function(x) call("<", call("abs", as.name(x)), climTol[grep(x, colnames(dif))]))
-      ii <- Reduce(function(c1, c2) substitute(.c1 & .c2, list(.c1 = c1, .c2 = c2)), l)
-      anacid <- dat_full$cid[dif[eval(ii), which = TRUE]] # FIXED: Use full dataset for analogue search
-    }
-
-    if (method == "Variable") { # Garcia Molinos et al. 2017
-      climTol <- as.numeric(dat[i, ((2 * n) + 1):(3 * n), with = FALSE]) # focal cell tolerance
-      upper <- colnames(dif)
-      l <- lapply(upper, function(x) call("<", call("abs", as.name(x)), climTol[grep(x, colnames(dif))]))
-      ii <- Reduce(function(c1, c2) substitute(.c1 & .c2, list(.c1 = c1, .c2 = c2)), l)
-      anacid <- dat_full$cid[dif[eval(ii), which = TRUE]] # FIXED: Use full dataset for analogue search
+    # OPTIMIZATION #7: Cache coordinate extractions (now from pre-extracted matrix)
+    focal_coords <- focal_coords_mat[i, ]
+    
+    # Extract present values for focal cell (now from pre-extracted matrix)
+    pres <- pres_mat[i, ]
+    
+    # OPTIMIZATION #1: Use matrix operations directly without creating data.table copy
+    # Calculate differences for all target cells at once
+    dif_mat <- sweep(fut_mat, 2, pres, "-")
+    
+    # OPTIMIZATION #2: Simplified analogue filtering using direct boolean operations
+    if (method == "Single") {
+      # Apply threshold using pre-computed matrix
+      is_analogue <- rowSums(abs(dif_mat) < climTol_mat) == n
+      anacid <- full_cids[is_analogue]
+      ana_idx <- which(is_analogue)
+    } else if (method == "Variable") {
+      # Get cell-specific tolerance
+      focal_climTol <- as.numeric(dat[i, ((2 * n) + 1):(3 * n), with = FALSE])
+      focal_climTol_mat <- matrix(rep(focal_climTol, each = nrow(fut_mat)), ncol = n)
+      is_analogue <- rowSums(abs(dif_mat) < focal_climTol_mat) == n
+      anacid <- full_cids[is_analogue]
+      ana_idx <- which(is_analogue)
     }
 
     # LOCATE CLOSEST ANALOGUE
     if (length(anacid) > 0) {
-      # check which of those are within distance and get the analogue at minimum distance
+      # OPTIMIZATION #3: Pre-compute subsetting indices once
+      ana_coords <- full_coords[ana_idx, , drop = FALSE]
+      
+      # Calculate distances
       if (distfun == "Euclidean") {
-        d <- stats::dist(cbind(dat$x[i], dat$y[i]), cbind(dat_full$x[dat_full$cid %in% anacid], dat_full$y[dat_full$cid %in% anacid]))
-      } # in x/y units
-      if (distfun == "GreatCircle") {
-        d <- (geosphere::distHaversine(cbind(dat$x[i], dat$y[i]), cbind(dat_full$x[dat_full$cid %in% anacid], dat_full$y[dat_full$cid %in% anacid]))) / 1000
-      } # in km
+        d <- sqrt(rowSums((ana_coords - matrix(focal_coords, nrow = nrow(ana_coords), ncol = 2, byrow = TRUE))^2))
+      } else if (distfun == "GreatCircle") {
+        d <- geosphere::distHaversine(matrix(focal_coords, ncol = 2), ana_coords) / 1000
+      }
 
-      an <- anacid[d < geoTol] # cids analogue cells within search radius
-      dis <- d[d < geoTol] # distance to candidate analogues
+      # Filter by geographic tolerance
+      within_tol <- d < geoTol
+      an <- anacid[within_tol]
+      dis <- d[within_tol]
+      
       if (length(an) > 0) {
-        result[i, target := an[which.min(dis)]] # cid of geographically closest climate analogue
+        # OPTIMIZATION #4: Store the index when finding minimum
+        min_idx <- which.min(dis)
+        closest_cid <- an[min_idx]
+        min_dis <- dis[min_idx]
+        
+        result[i, target := closest_cid]
+        result[i, geoDis := min_dis]
+        result[i, vel := min_dis / tdiff]
+        
+        # Calculate climatic distance for the closest analogue
         if (method == "Single") {
-          result[i, climDis := mean(as.numeric(dif[which(anacid == result[i, target]), ]))]
-        } # mean clim difference for the closest analogue
-        result[i, geoDis := min(dis)]
-        result[i, ang := geosphere::bearing(dat[i, c("x", "y")], dat_full[cid == result[i, target], c("x", "y")])]
-        result[i, vel := result$geoDis[i] / tdiff]
+          # Find which analogue index corresponds to the closest
+          closest_ana_idx <- ana_idx[within_tol][min_idx]
+          result[i, climDis := mean(abs(dif_mat[closest_ana_idx, ]))]
+        }
+        
+        # Calculate bearing (direct indexing instead of searching)
+        closest_ana_global_idx <- ana_idx[within_tol][min_idx]
+        result[i, ang := geosphere::bearing(focal_coords, full_coords[closest_ana_global_idx, , drop = FALSE])]
       }
     }
   } # End of the loop

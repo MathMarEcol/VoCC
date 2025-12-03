@@ -7,13 +7,13 @@
 #' @param spatGrad The output from the spatGrad function containing the magnitudes and angles for the spatial climatic gradient.
 #'
 #' @return A \code{RasterStack} containing the climate velocity magnitude ("voccMag",
-#' km/yr for unprojected rasters and spatial unit/year for projected rasters) and angle("voccAng" in
+#' km/yr for unprojected rasters and spatial unit/year for projected rasters) and angle ("voccAng" in
 #' degrees north: 0N, 90E, 180S and 270W).
 #'
 #' @references \href{http://science.sciencemag.org/content/334/6056/652}{Burrows et al. 2011}. The pace of shifting climate
 #' in marine and terrestrial ecosystems. Science, 334, 652-655.
 #'
-#' @seealso{\code{\link{tempTrend}}, \code{\link{spatGrad}}}
+#' @seealso \code{\link{tempTrend}}, \code{\link{spatGrad}}
 #'
 #' @export
 #'
@@ -32,8 +32,6 @@
 #'
 #' v <- gVoCC(tr, sg)
 #' terra::plot(v)
-#' }
-#'
 gVoCC <- function(tempTrend, spatGrad) {
   VoCC <- tempTrend[[1]] / spatGrad[[1]]
 

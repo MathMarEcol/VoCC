@@ -2,8 +2,7 @@
 #' @param A \code{numeric} giving coordinates of first point
 #' @param B \code{numeric} giving coordinates of second point
 #' @param n \code{numeric} number of segments to divide the distance between points with
-#' @author Jorge Garcia Molinos
-
+#'
 splitLine <- function(A, B, n) {
   # Remove sign change for dateline, if needed
   B[, 1] <- with(B, ifelse(abs(B[, 1] - A[, 1]) > 180 & B[, 1] < 0, B[, 1] + 360, B[, 1]))

@@ -28,8 +28,8 @@ associated to a climatic variable after Burrows et al. (2011). This trend is
 to be used for the calculation of the gradient-based climate velocity using gVoCC.
 }
 \examples{
-\dontrun{
-HSST <- VoCC_get_data("HSST.tif")
+
+HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata"))
 
 yrSST <- sumSeries(HSST,
   p = "1969-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
@@ -41,15 +41,12 @@ yrSST <- sumSeries(HSST,
 sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
 
 terra::plot(sg)
-}
 
 }
 \references{
-\href{http://science.sciencemag.org/content/334/6056/652}{Burrows et al. 2011}. The pace of shifting climate in marine and terrestrial ecosystems. Science, 334, 652-655.
+\href{http://science.sciencemag.org/content/334/6056/652}{Burrows et al. 2011}.
+The pace of shifting climate in marine and terrestrial ecosystems. Science, 334, 652-655.
 }
 \seealso{
 {\code{\link{tempTrend}}, \code{\link{gVoCC}}}
-}
-\author{
-Jorge Garcia Molinos, David S. Schoeman, and Michael T. Burrows
 }

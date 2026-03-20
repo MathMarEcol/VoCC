@@ -15,10 +15,9 @@
 #' @seealso{\code{\link{dVoCC}}, \code{\link{climPCA}}}
 #'
 #' @export
-#' @author Jorge Garcia Molinos and Naoki H. Kumagai
 #' @examples
-#' \dontrun{
-#' JapTC <- VoCC_get_data("JapTC.tif")
+#'
+#' JapTC <- terra::rast(system.file("extdata", "JapTC.tif", package = "VoCC"))
 #'
 #' # Plot climate space for the two first variables(annual precipitation and maximum temperature)
 #' xy <- stats::na.omit(data.frame(
@@ -37,18 +36,24 @@
 #'   plot = out, filename = file.path(getwd(), "example_plot.pdf"),
 #'   width = 17, height = 17, unit = "cm"
 #' )
-#' }
+#'
 climPlot <- function(xy, x.binSize, y.binSize, x.name = "V1", y.name = "V2") {
   xp <- xy[, 1]
   yp <- xy[, 3]
   xf <- xy[, 2]
   yf <- xy[, 4]
 
+  # OPTIMIZATION: Pre-calculate ranges to avoid repeated min/max calls
+  x_combined <- c(xp, xf)
+  y_combined <- c(yp, yf)
+  x_range <- range(x_combined)
+  y_range <- range(y_combined)
+
   # bins per axis
-  x.nbins <- floor((abs(range(xp, xf)[2] - range(xp, xf)[1])) / x.binSize)
-  y.nbins <- floor((abs(range(yp, yf)[2] - range(yp, yf)[1])) / y.binSize)
-  x.bin <- seq(floor(min(cbind(xp, xf))), ceiling(max(cbind(xp, xf))), length = x.nbins)
-  y.bin <- seq(floor(min(cbind(yp, yf))), ceiling(max(cbind(yp, yf))), length = y.nbins)
+  x.nbins <- floor(abs(x_range[2] - x_range[1]) / x.binSize)
+  y.nbins <- floor(abs(y_range[2] - y_range[1]) / y.binSize)
+  x.bin <- seq(floor(x_range[1]), ceiling(x_range[2]), length = x.nbins)
+  y.bin <- seq(floor(y_range[1]), ceiling(y_range[2]), length = y.nbins)
 
   # define palette
   rf <- grDevices::colorRampPalette(rev(RColorBrewer::brewer.pal(11, "Spectral")))
@@ -75,18 +80,20 @@ climPlot <- function(xy, x.binSize, y.binSize, x.name = "V1", y.name = "V2") {
   freq2Dp[freq2Dp > UL] <- UL
   freq2Df[freq2Df > UL] <- UL
 
-  # novel (in future but not present, 2), remnant (in both, 1), and dissapearing (in present but not future, 3) climates
-  freq2D <- diag(nrow = x.nbins, ncol = y.nbins)
-  freq2D[] <- NA
-  for (i in 1:x.nbins) {
-    for (j in 1:y.nbins) {
-      freq2D[i, j] <- ifelse(is.na(freq2Dp[i, j]) & !is.na(freq2Df[i, j]), 1,
-        ifelse(!is.na(freq2Dp[i, j]) & is.na(freq2Df[i, j]), 2,
-          ifelse(is.na(freq2Dp[i, j]) & is.na(freq2Df[i, j]), NA, 0)
-        )
-      )
-    }
-  }
+  # OPTIMIZATION: Vectorized climate classification - eliminates nested loops
+  freq2D <- matrix(NA, nrow = x.nbins, ncol = y.nbins)
+
+  # Vectorized logical operations - much faster than nested loops
+  present_na <- is.na(freq2Dp)
+  future_na <- is.na(freq2Df)
+
+  # Novel climates: in future but not present
+  freq2D[present_na & !future_na] <- 1
+  # Disappearing climates: in present but not future
+  freq2D[!present_na & future_na] <- 2
+  # Remnant climates: in both present and future
+  freq2D[!present_na & !future_na] <- 0
+  # NA remains NA (neither present nor future)
 
   # plot climate space
   Freq2Dpf <- rbind(

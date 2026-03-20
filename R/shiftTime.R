@@ -19,40 +19,48 @@
 #' shifting climate in marine and terrestrial ecosystems. Science, 334, 652-655.
 #'
 #' @export
-#' @author Jorge Garcia Molinos and Michael T. Burrows
 #' @examples
-#' \dontrun{
-#' HSST <- VoCC_get_data("HSST.tif")
+#'
+#' HSST <- terra::rast(system.file("extdata", "HadiSST.tif", package = "VoCCdata"))
 #' Apr <- shiftTime(HSST, yr1 = 1960, yr2 = 2009, yr0 = 1955, th = 10, m = 4)
 #'
 #' terra::plot(Apr)
-#' }
+#'
 shiftTime <- function(r, yr1, yr2, yr0, th, m) {
+  # OPTIMIZATION: Pre-calculate constants and month indices
+  yr_offset <- (yr1 - yr0) * 12
+
   # 1. Long term trends in monthly values (e.g. deg/year if temperature)
-  m1 <- ((yr1 - yr0) * 12) + m
+  m1 <- yr_offset + m
   m2 <- ((yr2 - yr0) * 12) + m
   r1 <- r[[seq(m1, m2, by = 12)]]
   trend <- tempTrend(r1, th)[[1]]
 
-  # 2. seasonal rate of shift in temperature centered on each month (deg/month) = difference in
-  # temperature between  preceding and following months divided by 2 months (slope) preceding month
-  b <- ifelse((m - 1) == 0, 12, (m - 1))
-  m1 <- ((yr1 - yr0) * 12) + b
-  m2 <- ((yr2 - yr0) * 12) + b
-  x2 <- r[[seq(m1, m2, by = 12)]]
+  # OPTIMIZATION: Pre-calculate preceding and following months with bounds checking
+  prev_month <- if (m == 1) 12 else (m - 1)
+  next_month <- if (m == 12) 1 else (m + 1)
+
+  # 2. seasonal rate of shift in temperature centered on each month (deg/month)
+  # preceding month
+  m1_prev <- yr_offset + prev_month
+  m2_prev <- ((yr2 - yr0) * 12) + prev_month
+  x2 <- r[[seq(m1_prev, m2_prev, by = 12)]]
 
   # following month
-  b <- ifelse((m + 1) == 13, 1, (m + 1))
-  m1 <- ((yr1 - yr0) * 12) + b
-  m2 <- ((yr2 - yr0) * 12) + b
-  x3 <- r[[seq(m1, m2, by = 12)]]
+  m1_next <- yr_offset + next_month
+  m2_next <- ((yr2 - yr0) * 12) + next_month
+  x3 <- r[[seq(m1_next, m2_next, by = 12)]]
+
+  # OPTIMIZATION: Pre-calculate conversion factor
+  days_per_decade_factor <- 3652.5 / 12  # 304.375
 
   # slope
   x4 <- terra::mean((x3 - x2) / 2, na.rm = TRUE)
 
-  # 3. seasonal shifts (month/year) converted to days per decade by multiplying by 10 years, 365.25 days per year and dividing by 12 months
-  sShift <- (trend / x4) * (3652.5 / 12)
+  # 3. seasonal shifts (month/year) converted to days per decade
+  sShift <- (trend / x4) * days_per_decade_factor
   sShift[sShift == Inf | sShift == -Inf] <- NA
+
   r2 <- c(trend, x4, sShift)
   names(r2) <- c("mTrend", "seaRate", "seaShift")
   return(r2)

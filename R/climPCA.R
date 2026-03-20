@@ -20,10 +20,10 @@
 #' @importFrom data.table ":="
 #'
 #' @export
-#' @author Jorge Garcia Molinos
+#'
 #' @examples
-#' \dontrun{
-#' JapTC <- VoCC_get_data("JapTC.tif")
+#'
+#' JapTC <- terra::rast(system.file("extdata", "JapTC.tif", package = "VoCC"))
 #'
 #' comp <- climPCA(JapTC[[c(1, 3, 5)]], JapTC[[c(2, 4, 6)]],
 #'                 trans = NA, cen = TRUE, sc = TRUE, th = 0.85)
@@ -31,24 +31,38 @@
 #' # Create a data frame with the necessary variables in the required order (see climAna? for details)
 #' clim <- comp[[2]][, c(2, 4, 3, 5, 1)]
 #' clim[, c("x", "y")] <- terra::xyFromCell(JapTC[[1]], clim$cid)
-#' }
 #'
 climPCA <- function(climp, climf, trans = function(x) log(x), cen = TRUE, sc = TRUE, th = 0.8) {
+
+  .SD <- NULL
+
+  # OPTIMIZATION: Pre-calculate cell count to avoid repeated calls
+  n_cells <- terra::ncell(climp[[1]])
+
   # get a data table with the pooled values (current/future) of the clim variables
   clim <- data.table::data.table(rbind(terra::values(climp), terra::values(climf)))
-  clim <- stats::na.omit(clim[, c("cid", "p") := list(rep(1:terra::ncell(climp[[1]]), times = 2), rep(c("present", "future"), each = terra::ncell(climp[[1]])))])
+  clim <- stats::na.omit(clim[, c("cid", "p") := list(rep(1:n_cells, times = 2), rep(c("present", "future"), each = n_cells))])
+
+  # OPTIMIZATION: Store column indices to avoid repeated column selection
+  data_cols <- !names(clim) %in% c("cid", "p")
 
   # apply transformation if required
   if (!is.na(trans)) {
-    clim <- trans(clim[, -c("cid", "p")])
+    clim_data <- clim[, .SD, .SDcols = data_cols]
+    clim_data <- trans(clim_data)
+    # Rebuild clim with transformed data
+    clim <- cbind(clim_data, clim[, c("cid", "p")])
   }
 
   # apply PCA
-  clim.pca <- stats::prcomp(clim[, -c("cid", "p")], center = cen, scale. = sc)
+  clim.pca <- stats::prcomp(clim[, .SD, .SDcols = data_cols], center = cen, scale. = sc)
 
-  # extract numper of components explaining more than th accumulated variance
-  a <- which((cumsum((clim.pca$sdev)^2) / sum(clim.pca$sdev^2)) >= th)[1]
-  val.pca <- clim.pca$x[, 1:a]
+  # OPTIMIZATION: Vectorized variance calculation
+  sdev_squared <- clim.pca$sdev^2
+  cumvar_prop <- cumsum(sdev_squared) / sum(sdev_squared)
+  a <- which(cumvar_prop >= th)[1]
+
+  val.pca <- clim.pca$x[, 1:a, drop = FALSE]
   val <- data.frame(val.pca, cid = clim$cid, p = clim$p)
 
   # put it back in wide form

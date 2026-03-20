@@ -20,30 +20,10 @@ degrees north: 0N, 90E, 180S and 270W).
 Function to calculate the velocity of climate change after Burrows et al. (2011)
 based on local climatic temporal trends and spatial gradients.
 }
-\examples{
-\dontrun{
-HSST <- VoCC_get_data("HSST.tif")
-yrSST <- sumSeries(HSST,
-  p = "1960-01/2009-12", yr0 = "1955-01-01", l = terra::nlyr(HSST),
-  fun = function(x) colMeans(x, na.rm = TRUE), freqin = "months", freqout = "years"
-)
-tr <- tempTrend(yrSST, th = 10)
-sg <- spatGrad(yrSST, th = 0.0001, projected = FALSE)
-
-# Magnitude and angle of the climate velocity (km/yr) 1960-2009
-
-v <- gVoCC(tr, sg)
-terra::plot(v)
-}
-
-}
 \references{
 \href{http://science.sciencemag.org/content/334/6056/652}{Burrows et al. 2011}. The pace of shifting climate
 in marine and terrestrial ecosystems. Science, 334, 652-655.
 }
 \seealso{
 {\code{\link{tempTrend}}, \code{\link{spatGrad}}}
-}
-\author{
-Jorge Garcia Molinos
 }
